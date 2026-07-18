@@ -14,15 +14,15 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: `${BACKEND_URL}/api/:path*`,
+        destination: `${BACKEND_URL}/:path*`,
       },
       {
         source: '/musyrif/:path*',
-        destination: `${BACKEND_URL}/api/musyrif/:path*`,
+        destination: `${BACKEND_URL}/musyrif/:path*`,
       },
       {
         source: '/admin/:path*',
-        destination: `${BACKEND_URL}/api/admin/:path*`,
+        destination: `${BACKEND_URL}/admin/:path*`,
       },
     ];
   },

@@ -5,3 +5,7 @@ dist/
 build/
 .env
 .env.local
+db_backup.sql
+app/cookies.txt
+app/__pycache__/
+*.pyc

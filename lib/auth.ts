@@ -39,13 +39,13 @@ export function getAuthHeaders(): Record<string, string> {
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Session-User': session.username || 'admin', // Pastikan ini terkirim
-    'x-session-user': session.username || 'admin', // Tambahkan lowercase untuk jaga-jaga
-    'X-Session-Nama': session.nama_lengkap || session.username || 'Admin',
+    'X-Session-User': session.username,
+    'x-session-user': session.username,
+    'X-Session-Nama': session.nama_lengkap || session.username,
   };
 
-  const token = session.access_token || session.token || "dummy-token-jika-perlu";
-  headers['Authorization'] = `Bearer ${token}`;
+  const token = session.access_token || session.token;
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   return headers;
 }
@@ -66,4 +66,3 @@ export function getPostLoginPath(role: string): string | null {
   if (isMusyrifRole(normalized)) return '/musyrif';
   return null;
 }
-
