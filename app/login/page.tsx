@@ -116,7 +116,7 @@ export default function LoginPage() {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 pr-24 text-base text-slate-900 transition placeholder:text-slate-400 focus:border-gnome-green focus:outline-none sm:text-sm"
+                    className="min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 pr-12 text-base text-slate-900 transition placeholder:text-slate-400 focus:border-gnome-green focus:outline-none sm:text-sm"
                     placeholder="Masukkan password"
                     required
                     autoComplete="current-password"
@@ -125,11 +125,41 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-1.5 top-1/2 min-h-8 -translate-y-1/2 rounded px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                    className="absolute right-1.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-60"
                     aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
                     disabled={loading}
                   >
-                    {showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                    {showPassword ? (
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 3l18 18" />
+                        <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                        <path d="M9.9 4.3A10.7 10.7 0 0 1 12 4c5 0 8.6 4.5 10 8-0.5 1.2-1.2 2.4-2.1 3.5" />
+                        <path d="M6.2 6.2C4.2 7.6 2.8 9.8 2 12c1.4 3.5 5 8 10 8 1.5 0 2.9-0.4 4.1-1" />
+                      </svg>
+                    ) : (
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M2 12s3.6-8 10-8 10 8 10 8-3.6 8-10 8-10-8-10-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
                   </button>
                 </div>
               </div>
