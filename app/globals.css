@@ -1,16 +1,59 @@
 @import "tailwindcss";
 
 @theme {
-  /* Palet warna hijau baru sesuai tema UI Anda */
-  --color-gnome-darker: #f8f9fa;      /* Background utama (Putih/Abu sangat muda) */
-  --color-gnome-card: #ffffff;        /* Background kartu (Putih) */
-  --color-gnome-input: #e6f9f0;       /* Background input/elemen sekunder (Hijau sangat muda) */
-  --color-gnome-border: #d1fae5;      /* Garis batas (Hijau muda) */
-  --color-gnome-green: #00c875;       /* Warna utama (Hijau tombol/highlight) */
+  --color-gnome-darker: #f6f8fb;
+  --color-gnome-card: #ffffff;
+  --color-gnome-input: #eefbf5;
+  --color-gnome-border: #ccefe0;
+  --color-gnome-green: #00b86b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
 }
 
 body {
   background-color: var(--color-gnome-darker);
-  color: #1e293b;                     /* Teks utama (Gelap agar kontras) */
+  color: #1e293b;
   min-height: 100vh;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+::selection {
+  background: rgba(0, 184, 107, 0.18);
+}
+
+:focus-visible {
+  outline: 3px solid rgba(0, 184, 107, 0.28);
+  outline-offset: 2px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 180ms ease-out both;
 }
