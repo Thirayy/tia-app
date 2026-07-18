@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  /* Palet warna hijau baru sesuai tema UI Anda */
+  --color-gnome-darker: #f8f9fa;      /* Background utama (Putih/Abu sangat muda) */
+  --color-gnome-card: #ffffff;        /* Background kartu (Putih) */
+  --color-gnome-input: #e6f9f0;       /* Background input/elemen sekunder (Hijau sangat muda) */
+  --color-gnome-border: #d1fae5;      /* Garis batas (Hijau muda) */
+  --color-gnome-green: #00c875;       /* Warna utama (Hijau tombol/highlight) */
+}
+
+body {
+  background-color: var(--color-gnome-darker);
+  color: #1e293b;                     /* Teks utama (Gelap agar kontras) */
+  min-height: 100vh;
+}
