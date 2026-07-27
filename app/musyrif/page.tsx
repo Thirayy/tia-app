@@ -5,6 +5,7 @@ import api from '@/lib/axiosInstance';
 import { ensureArray, ensureObject } from '@/lib/api';
 import { clearSession, getSession, isAdminRole } from '@/lib/auth';
 import { fetchApi } from '@/lib/fetchApi';
+import { parseSpeechToSurah } from '@/lib/surahDictionary'; // Pastikan file dictionary sudah dibuat sebelumnya
 export default function MusyrifPortalMobile() {
   const router = useRouter();
   const STORAGE_KEY = 'musyrif_portal_state';
@@ -24,7 +25,7 @@ export default function MusyrifPortalMobile() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   // Workflow State: 'menu' | 'select_student' | 'student_detail' | 'input_form'
-  const [currentStep, setCurrentStep] = useState<'menu' | 'select_student' | 'student_detail' | 'input_form'>('menu');
+  const [currentStep, setCurrentStep] = useState<'menu' | 'select_student' | 'recording_session' | 'input_form' | 'student_detail'>('menu');
   // Mode State: 'input' (untuk input laporan) atau 'monitor' (untuk pantau & analisis)
   const [portalMode, setPortalMode] = useState<'input' | 'monitor'>('input');
   
@@ -119,7 +120,6 @@ export default function MusyrifPortalMobile() {
   
 
   const startListening = () => {
-    // Gunakan 'as any' agar TypeScript tidak error karena Web Speech API
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
@@ -127,27 +127,40 @@ export default function MusyrifPortalMobile() {
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'id-ID'; // Bahasa Indonesia (bisa mendeteksi kata ngaji/tajwid dengan baik)
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'id-ID';
+      recognition.continuous = false;
+      recognition.interimResults = false;
 
-    recognition.onstart = () => setIsListening(true);
-    
-    recognition.onend = () => setIsListening(false);
-    
-    recognition.onerror = (event: any) => {
-      console.error("Mic error:", event.error);
+      recognition.onstart = () => setIsListening(true);
+      
+      recognition.onend = () => setIsListening(false);
+      
+      recognition.onerror = (event: any) => {
+        // Abaikan error 'aborted' agar tidak mengganggu UI jika dibatalkan manual
+        if (event.error !== 'aborted') {
+          console.error("Mic error:", event.error);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setCatatanText((prev) => prev ? `${prev} ${transcript}` : transcript);
+
+        const parsed = parseSpeechToSurah(transcript);
+        setSurah(parsed.surah);
+        setAyat(parsed.ayat);
+
+        setCurrentStep('input_form');
+      };
+
+      recognition.start();
+    } catch (e) {
+      console.error("Gagal memulai recognition:", e);
       setIsListening(false);
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      // Menambahkan hasil suara ke teks yang sudah ada, dipisah dengan spasi
-      setCatatanText((prev) => prev ? `${prev} ${transcript}` : transcript);
-    };
-
-    recognition.start();
+    }
   };
 
   const fetchStatistikSantri = async (santriId: number | string) => {
@@ -171,10 +184,11 @@ export default function MusyrifPortalMobile() {
     setCatatanText('');
 
     if (portalMode === 'input') {
-      // Kalau modenya input, langsung lari ke Form Input
-      setCurrentStep('input_form');
+      // Masuk ke Step Recording Session terlebih dahulu atau langsung picu mic
+      setCurrentStep('recording_session');
+      // Opsional: Langsung jalankan mic otomatis
+      // startListening(); 
     } else {
-      // Kalau modenya monitor, lari ke halaman Detail Pantau & Analisis
       fetchStatistikSantri(santri.id);
       setCurrentStep('student_detail');
     }
@@ -425,6 +439,49 @@ return(
           </div>
         ))
       )}
+    </div>
+  </div>
+)}
+
+{/* ----------------- STEP 3: RECORDING SESSION (VOICE LISTENING) ----------------- */}
+{currentStep === 'recording_session' && selectedSantri && (
+  <div className="bg-white p-8 rounded-3xl border border-gnome-border flex flex-col items-center justify-center text-center gap-6 animate-fadeIn shadow-sm">
+    <div>
+      <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Sesi Rekaman Suara</span>
+      <h3 className="text-lg font-black text-slate-800">{selectedSantri.nama_santri}</h3>
+    </div>
+
+    {/* Indikator Mikrofon Pulsing */}
+    <div className="relative flex items-center justify-center my-4">
+      <div className={`absolute w-32 h-32 rounded-full bg-emerald-500/20 ${isListening ? 'animate-ping' : ''}`}></div>
+      <button
+        type="button"
+        onClick={startListening}
+        className="w-24 h-24 rounded-full bg-gnome-green flex items-center justify-center text-3xl text-white shadow-xl relative z-10 hover:scale-105 transition active:scale-95"
+      >
+        🎙️
+      </button>
+    </div>
+
+    <p className="text-xs text-slate-500 italic max-w-xs">
+      {isListening ? "Sedang mendengarkan... Silahkan sebutkan nama surah dan ayat." : "Tekan ikon mikrofon di atas untuk mulai merekam bacaan santri."}
+    </p>
+
+    <div className="flex gap-3 w-full mt-2">
+      <button
+        type="button"
+        onClick={() => setCurrentStep('select_student')}
+        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3 rounded-xl text-xs font-bold uppercase transition"
+      >
+        Kembali
+      </button>
+      <button
+        type="button"
+        onClick={startListening}
+        className="flex-1 bg-gnome-green hover:bg-emerald-600 text-white py-3 rounded-xl text-xs font-bold uppercase transition shadow-md"
+      >
+        {isListening ? "Mendengarkan..." : "Mulai Rekam 🎙️"}
+      </button>
     </div>
   </div>
 )}
