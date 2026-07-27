@@ -25,7 +25,7 @@ export default function MusyrifPortalMobile() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   // Workflow State: 'menu' | 'select_student' | 'student_detail' | 'input_form'
-  const [currentStep, setCurrentStep] = useState<'menu' | 'select_student' | 'recording_session' | 'input_form' | 'student_detail'>('menu');
+  const [currentStep, setCurrentStep] = useState<'menu' | 'select_student' | 'ready_to_record' | 'recording_session' | 'input_form' | 'student_detail'>('menu');
   // Mode State: 'input' (untuk input laporan) atau 'monitor' (untuk pantau & analisis)
   const [portalMode, setPortalMode] = useState<'input' | 'monitor'>('input');
   
@@ -119,7 +119,7 @@ export default function MusyrifPortalMobile() {
   }, [router]);
   
 
-  const startListening = () => {
+const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
@@ -127,40 +127,46 @@ export default function MusyrifPortalMobile() {
       return;
     }
 
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'id-ID';
-      recognition.continuous = false;
-      recognition.interimResults = false;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'id-ID';
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-      recognition.onstart = () => setIsListening(true);
-      
-      recognition.onend = () => setIsListening(false);
-      
-      recognition.onerror = (event: any) => {
-        // Abaikan error 'aborted' agar tidak mengganggu UI jika dibatalkan manual
-        if (event.error !== 'aborted') {
-          console.error("Mic error:", event.error);
-        }
-        setIsListening(false);
-      };
+    recognition.onstart = () => {
+      setIsListening(true);
+      setCurrentStep('recording_session');
+    };
 
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setCatatanText((prev) => prev ? `${prev} ${transcript}` : transcript);
-
-        const parsed = parseSpeechToSurah(transcript);
-        setSurah(parsed.surah);
-        setAyat(parsed.ayat);
-
-        setCurrentStep('input_form');
-      };
-
-      recognition.start();
-    } catch (e) {
-      console.error("Gagal memulai recognition:", e);
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.onerror = (event: any) => {
+      if (event.error !== 'aborted') {
+        console.error("Mic error:", event.error);
+      }
       setIsListening(false);
-    }
+      setCurrentStep('ready_to_record');
+    };
+
+    recognition.onresult = async (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setCatatanText((prev) => prev ? `${prev} ${transcript}` : transcript);
+
+      try {
+        // Kirim transcript mentah ke Backend AI Parser sesuai spesifikasi Bos Ray
+        const res = await api.post('/musyrif/parse-voice', { raw_text: transcript });
+        const parsedData = res.data?.data || res.data;
+        
+        if (parsedData?.surah) setSurah(parsedData.surah);
+        if (parsedData?.ayat) setAyat(parsedData.ayat);
+      } catch (err) {
+        console.warn("Gagal parsing backend, fallback manual:", err);
+      }
+
+      // Lanjut ke Step Review & Edit Draft
+      setCurrentStep('input_form');
+    };
+
+    recognition.start();
   };
 
   const fetchStatistikSantri = async (santriId: number | string) => {
@@ -184,10 +190,8 @@ export default function MusyrifPortalMobile() {
     setCatatanText('');
 
     if (portalMode === 'input') {
-      // Masuk ke Step Recording Session terlebih dahulu atau langsung picu mic
-      setCurrentStep('recording_session');
-      // Opsional: Langsung jalankan mic otomatis
-      // startListening(); 
+      // Sesuai arahan Bos Ray: Masuk ke step Ready to Record dulu (Low-Touch UX)
+      setCurrentStep('ready_to_record');
     } else {
       fetchStatistikSantri(santri.id);
       setCurrentStep('student_detail');
@@ -440,6 +444,34 @@ return(
         ))
       )}
     </div>
+  </div>
+)}
+
+{/* ----------------- STEP 3: READY TO RECORD ----------------- */}
+{currentStep === 'ready_to_record' && selectedSantri && (
+  <div className="bg-white p-8 rounded-3xl border border-gnome-border flex flex-col items-center justify-center text-center gap-6 animate-fadeIn shadow-sm">
+    <div>
+      <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Siap Merekam Setoran</span>
+      <h3 className="text-xl font-black text-slate-800">{selectedSantri.nama_santri}</h3>
+      <p className="text-xs text-slate-500 mt-1">Nomor Induk: {selectedSantri.nomor_induk}</p>
+    </div>
+
+    {/* Tombol Sadar "Mulai Bicara" sesuai instruksi Low-Touch UX */}
+    <button
+      type="button"
+      onClick={startListening}
+      className="w-full bg-gnome-green hover:bg-emerald-600 text-white font-black py-5 px-6 rounded-2xl text-xs uppercase tracking-widest shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+    >
+      <span className="text-xl">🎙️</span> Mulai Bicara
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setCurrentStep('select_student')}
+      className="text-xs text-slate-400 hover:text-slate-600 transition"
+    >
+      ← Pilih Santri Lain
+    </button>
   </div>
 )}
 

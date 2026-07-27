@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://10.90.90.4:8000/';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://10.70.70.33:8000/';
 
 const nextConfig: NextConfig = {
   assetPrefix: '/',
