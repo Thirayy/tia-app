@@ -89,34 +89,37 @@ export default function MusyrifPortalMobile() {
   }, [selectedSantri, stats, analisis, currentStep, portalMode, successMsg, lastSavedReport, reportHistory]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
 
-      const session = getSession();
-      if (!session?.username) {
-        router.push('/login');
-        return;
-      }
+    const session = getSession();
+    if (!session?.username) {
+      router.push('/login');
+      return;
+    }
 
-      setUserRole(session.role);
-      setMusyrifName(session.nama_lengkap || session.nama || session.username);
+    setUserRole(session.role);
+    setMusyrifName(session.nama_lengkap || session.nama || session.username);
 
-      try {
-        const res = await api.get('/musyrif/santri');
-        setSantriList(ensureArray(res.data, ['santri']));
-      } catch (err: any) {
-        console.error('Fetch error:', err);
-        const errorMessage = err.response?.data?.detail || 'Gagal mengambil data santri';
-        setError(errorMessage);
-        setSantriList([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+    try {
+      // UBAH BARIS INI: dari '/musyrif' atau '/musyrif/santri' menjadi '/musyrif/halaqah'
+      const res = await api.get('/musyrif/halaqah'); 
+      
+      // Sesuaikan cara mem-parsing respon berdasarkan struktur JSON baru Bos Ray
+      setSantriList(ensureArray(res.data.santri || res.data, ['santri']));
+    } catch (err: any) {
+      console.error('Fetch error:', err);
+      const errorMessage = err.response?.data?.detail || 'Gagal mengambil data santri';
+      setError(errorMessage);
+      setSantriList([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchData();
-  }, [router]);
+  fetchData();
+}, [router]);
   
 
 const startListening = () => {
@@ -140,12 +143,16 @@ const startListening = () => {
     recognition.onend = () => setIsListening(false);
     
     recognition.onerror = (event: any) => {
-      if (event.error !== 'aborted') {
-        console.error("Mic error:", event.error);
-      }
-      setIsListening(false);
-      setCurrentStep('ready_to_record');
-    };
+  // Tangkap error not-allowed dan berikan peringatan yang ramah UX
+  if (event.error === 'not-allowed') {
+    alert("Izin Mikrofon diblokir! Tolong izinkan akses mikrofon di pengaturan browser Anda (ikon gembok di sebelah URL bar).");
+  } else if (event.error !== 'aborted') {
+    console.error("Mic error:", event.error);
+  }
+  
+  setIsListening(false);
+  setCurrentStep('ready_to_record'); // Kembalikan ke state siap merekam
+};
 
     recognition.onresult = async (event: any) => {
       const transcript = event.results[0][0].transcript;
