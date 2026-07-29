@@ -83,6 +83,7 @@ export default function MusyrifPortalMobile() {
   const [jenisTeguran, setJenisTeguran] = useState<string[]>([]);
   const [catatanTeguran, setCatatanTeguran] = useState('');
   const [catatanMusyrif, setCatatanMusyrif] = useState('');
+  const [searchSantriQuery, setSearchSantriQuery] = useState('');
 
   const [inputLoading, setInputLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -609,45 +610,69 @@ export default function MusyrifPortalMobile() {
         )}
 
         {/* STEP 2: PILIH SANTRI */}
-        {currentStep === 'select_student' && (
-          <div className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold text-slate-500 tracking-wider uppercase">
-                {portalMode === 'input' ? '🎙️ Pilih Santri Penyetor' : '📊 Pilih Santri Dipantau'}
-              </h3>
-              <button onClick={() => setCurrentStep('menu')} className="text-xs text-emerald-600 font-semibold hover:text-emerald-700">
-                ← Kembali
-              </button>
-            </div>
+{currentStep === 'select_student' && (
+  <div className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm">
+    <div className="flex justify-between items-center">
+      <h3 className="text-xs font-bold text-slate-500 tracking-wider uppercase">
+        {portalMode === 'input' ? '🎙️ Pilih Santri Penyetor' : '📊 Pilih Santri Dipantau'}
+      </h3>
+      <button onClick={() => setCurrentStep('menu')} className="text-xs text-emerald-600 font-semibold hover:text-emerald-700">
+        ← Kembali
+      </button>
+    </div>
 
-            <div className="flex flex-col gap-2 mt-1">
-              {error && <p className="text-xs text-center text-red-500 py-2">{error}</p>}
-              {santriList.length === 0 ? (
-                <p className="text-xs text-center text-slate-400 py-4">Belum ada data santri.</p>
-              ) : (
-                santriList.map((s: any) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSelectSantri(s)}
-                    className="bg-slate-50 hover:bg-emerald-50/70 p-3.5 rounded-2xl cursor-pointer border border-slate-200 hover:border-emerald-300 flex items-center justify-between transition group shadow-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center border border-emerald-400 text-xs font-bold text-white">
-                        {(s.nama_santri || s.nama || 'S').charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-800">{s.nama_santri || s.nama}</h4>
-                        <p className="text-[10px] text-slate-500">NIS: {s.nomor_induk || '-'}</p>
-                      </div>
-                    </div>
-                    <div>{renderStatusBadge(s.status_santri)}</div>
+    {/* Input Search Santri */}
+    <div className="mt-1">
+      <input
+        type="text"
+        placeholder="Cari nama atau NIS santri..."
+        value={searchSantriQuery}
+        onChange={(e) => setSearchSantriQuery(e.target.value)}
+        className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-800 placeholder-slate-400 shadow-sm transition"
+      />
+    </div>
+
+    <div className="flex flex-col gap-2">
+      {error && <p className="text-xs text-center text-red-500 py-2">{error}</p>}
+      
+      {santriList.length === 0 ? (
+        <p className="text-xs text-center text-slate-400 py-4">Belum ada data santri.</p>
+      ) : (
+        (() => {
+          const filteredSantri = santriList.filter((s: any) => {
+            const name = (s.nama_santri || s.nama || '').toLowerCase();
+            const nis = (s.nomor_induk || '').toLowerCase();
+            const query = searchSantriQuery.toLowerCase();
+            return name.includes(query) || nis.includes(query);
+          });
+
+          return filteredSantri.length === 0 ? (
+            <p className="text-xs text-center text-slate-400 py-4">Santri tidak ditemukan.</p>
+          ) : (
+            filteredSantri.map((s: any) => (
+              <div
+                key={s.id}
+                onClick={() => handleSelectSantri(s)}
+                className="bg-slate-50 hover:bg-emerald-50/70 p-3.5 rounded-2xl cursor-pointer border border-slate-200 hover:border-emerald-300 flex items-center justify-between transition group shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center border border-emerald-400 text-xs font-bold text-white">
+                    {(s.nama_santri || s.nama || 'S').charAt(0).toUpperCase()}
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800">{s.nama_santri || s.nama}</h4>
+                    <p className="text-[10px] text-slate-500">NIS: {s.nomor_induk || '-'}</p>
+                  </div>
+                </div>
+                <div>{renderStatusBadge(s.status_santri)}</div>
+              </div>
+            ))
+          );
+        })()
+      )}
+    </div>
+  </div>
+)}
         {/* STEP 3: READY TO RECORD */}
         {currentStep === 'ready_to_record' && selectedSantri && (
           <div className="bg-white p-6 rounded-3xl border border-emerald-100 flex flex-col items-center text-center gap-5 animate-fadeIn shadow-sm">
