@@ -1,349 +1,547 @@
 'use client';
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/axiosInstance';
-import { ensureArray, ensureObject } from '@/lib/api';
+import { ensureArray } from '@/lib/api';
 import { clearSession, getSession, isAdminRole } from '@/lib/auth';
-import { fetchApi } from '@/lib/fetchApi';
-import { parseSpeechToSurah } from '@/lib/surahDictionary'; // Pastikan file dictionary sudah dibuat sebelumnya
+
 export default function MusyrifPortalMobile() {
   const router = useRouter();
   const STORAGE_KEY = 'musyrif_portal_state';
-  const [expandedAiReports, setExpandedAiReports] = useState<number[]>([]);
-  const formatIndonesiaDateTime = (value: string | Date | null | undefined) => {
-    if (!value) return '—';
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' }).format(date);
-  };
+
+  // Basic States
+  const [isStateLoaded, setIsStateLoaded] = useState(false);
   const [musyrifName, setMusyrifName] = useState('');
   const [santriList, setSantriList] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedSantri, setSelectedSantri] = useState<any>(null);
-  const [stats, setStats] = useState<any>(null);
-  const [analisis, setAnalisis] = useState('');
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
-  // Workflow State: 'menu' | 'select_student' | 'student_detail' | 'input_form'
-  const [currentStep, setCurrentStep] = useState<'menu' | 'select_student' | 'ready_to_record' | 'recording_session' | 'input_form' | 'student_detail'>('menu');
-  // Mode State: 'input' (untuk input laporan) atau 'monitor' (untuk pantau & analisis)
-  const [portalMode, setPortalMode] = useState<'input' | 'monitor'>('input');
-  
 
-  // Form Input States
-  const [surah, setSurah] = useState('');
-  const [ayat, setAyat] = useState('');
-  const [statusSetoran, setStatusSetoran] = useState('lancar');
-  const [catatanText, setCatatanText] = useState('');
-  const [inputLoading, setInputLoading] = useState(false);
-  const [successMsg, setSuccessMsg] = useState('');
-  const [lastSavedReport, setLastSavedReport] = useState<any>(null);
-  const [reportHistory, setReportHistory] = useState<any[]>([]);
-  const [analyzingReportId, setAnalyzingReportId] = useState<string | null>(null);
-  const [isListening, setIsListening] = useState(false);
-  const notifyAdminOverviewRefresh = () => {
-    try {
-      localStorage.setItem('tia_refresh_signal', String(Date.now()));
-      window.dispatchEvent(new Event('tia-data-updated'));
-    } catch (err) {
-      console.warn('Gagal mengirim sinyal refresh overview:', err);
-    }
+  // Tab State untuk Detail Santri
+  const [activeTab, setActiveTab] = useState<'setoran_daily' | 'profile' | 'raport_log'>('setoran_daily');
+
+  // Helper Tanggal Lokal (Menghindari Bug Timezone UTC)
+  const getTodayLocalDate = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
+  // Filter Tanggal Setoran
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDate());
+
+  // Profile Data State
+  const [fullProfile, setFullProfile] = useState<any>(null);
+  const [historiSetoranFull, setHistoriSetoranFull] = useState<any[]>([]);
+  const [raportList, setRaportList] = useState<any[]>([]);
+  const [statusLogs, setStatusLogs] = useState<any[]>([]);
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  // AI Output States (Terpisah)
+  const [overallAnalysis, setOverallAnalysis] = useState('');
+  const [dailyAiSummary, setDailyAiSummary] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Workflow & Portal Mode
+  const [currentStep, setCurrentStep] = useState<
+    'menu' | 'select_student' | 'ready_to_record' | 'recording_session' | 'input_form' | 'student_detail'
+  >('menu');
+  const [portalMode, setPortalMode] = useState<'input' | 'monitor'>('input');
+
+  // Form Modals / Controls State
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [editStatus, setEditStatus] = useState('hadir');
+  const [editKeterangan, setEditKeterangan] = useState('');
+  const [editTargetHarian, setEditTargetHarian] = useState('');
+
+  // Form Ujian State
+  const [showUjianModal, setShowUjianModal] = useState(false);
+  const [tanggalUjian, setTanggalUjian] = useState('');
+  const [catatanPersiapan, setCatatanPersiapan] = useState('');
+  const [hasilUjian, setHasilUjian] = useState<'lulus' | 'remed'>('lulus');
+  const [catatanHasilUjian, setCatatanHasilUjian] = useState('');
+
+  // Form Raport State
+  const [showRaportModal, setShowRaportModal] = useState(false);
+  const [semesterRaport, setSemesterRaport] = useState('Ganjil 2026/2027');
+  const [nilaiHarian, setNilaiHarian] = useState(85);
+  const [nilaiBulanan, setNilaiBulanan] = useState(85);
+  const [nilaiAkhir, setNilaiAkhir] = useState(85);
+  const [catatanRaport, setCatatanRaport] = useState('');
+
+  // Form Input Setoran States
+  const [surahId, setSurahId] = useState<number | null>(null);
+  const [surah, setSurah] = useState('');
+  const [ayat, setAyat] = useState('');
+  const [statusSetoran, setStatusSetoran] = useState('Lancar');
+  const [catatanKoreksi, setCatatanKoreksi] = useState('');
+  const [adaTeguran, setAdaTeguran] = useState(false);
+  const [jenisTeguran, setJenisTeguran] = useState<string[]>([]);
+  const [catatanTeguran, setCatatanTeguran] = useState('');
+  const [catatanMusyrif, setCatatanMusyrif] = useState('');
+
+  const [inputLoading, setInputLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  const recognitionRef = useRef<any>(null);
+  const accumulatedTextRef = useRef<string>('');
+
+  // Restore LocalStorage (Anti Race-Condition)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
     try {
-      const savedState = localStorage.getItem(STORAGE_KEY);
-      if (!savedState) return;
-
-      const parsedState = JSON.parse(savedState);
-      setSelectedSantri(parsedState.selectedSantri && typeof parsedState.selectedSantri === 'object' && !Array.isArray(parsedState.selectedSantri) ? parsedState.selectedSantri : null);
-      setStats(parsedState.stats && typeof parsedState.stats === 'object' && !Array.isArray(parsedState.stats) ? parsedState.stats : null);
-      setAnalisis(typeof parsedState.analisis === 'string' ? parsedState.analisis : '');
-      setCurrentStep(['menu', 'select_student', 'student_detail', 'input_form'].includes(parsedState.currentStep) ? parsedState.currentStep : 'menu');
-      setPortalMode(['input', 'monitor'].includes(parsedState.portalMode) ? parsedState.portalMode : 'input');
-      setSuccessMsg(typeof parsedState.successMsg === 'string' ? parsedState.successMsg : '');
-      setLastSavedReport(parsedState.lastSavedReport && typeof parsedState.lastSavedReport === 'object' && !Array.isArray(parsedState.lastSavedReport) ? parsedState.lastSavedReport : null);
-      setReportHistory(Array.isArray(parsedState.reportHistory) ? parsedState.reportHistory : []);
-    } catch (err) {
-      console.error('Gagal memuat state portal:', err);
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.selectedSantri) setSelectedSantri(parsed.selectedSantri);
+        if (parsed.currentStep) setCurrentStep(parsed.currentStep);
+        if (parsed.portalMode) setPortalMode(parsed.portalMode);
+      }
+    } catch (e) {
+      console.warn('Gagal memuat state:', e);
+    } finally {
+      setIsStateLoaded(true);
     }
   }, []);
 
+  // Save LocalStorage
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !isStateLoaded) return;
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ selectedSantri, currentStep, portalMode })
+    );
+  }, [selectedSantri, currentStep, portalMode, isStateLoaded]);
 
-    const stateToSave = {
-      selectedSantri,
-      stats,
-      analisis,
-      currentStep,
-      portalMode,
-      successMsg,
-      lastSavedReport,
-      reportHistory,
+  // Auto-Fetch Profile jika page direfresh saat di student_detail
+  useEffect(() => {
+    if (selectedSantri?.id && currentStep === 'student_detail') {
+      fetchFullSantriProfile(selectedSantri.id);
+    }
+  }, [selectedSantri?.id, currentStep]);
+
+  // Cleanup Speech Recognition on Unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // Ignore
+        }
+      }
     };
+  }, []);
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
-  }, [selectedSantri, stats, analisis, currentStep, portalMode, successMsg, lastSavedReport, reportHistory]);
-
-  useEffect(() => {
-  const fetchData = async () => {
+ // Fetch Santri List
+  const fetchSantriList = async () => {
     setLoading(true);
     setError(null);
-
     const session = getSession();
     if (!session?.username) {
       router.push('/login');
       return;
     }
-
     setUserRole(session.role);
     setMusyrifName(session.nama_lengkap || session.nama || session.username);
 
     try {
-      // UBAH BARIS INI: dari '/musyrif' atau '/musyrif/santri' menjadi '/musyrif/halaqah'
-      const res = await api.get('/musyrif/halaqah'); 
-      
-      // Sesuaikan cara mem-parsing respon berdasarkan struktur JSON baru Bos Ray
-      setSantriList(ensureArray(res.data.santri || res.data, ['santri']));
+      const res = await api.get('/musyrif/halaqah');
+      const list = ensureArray(res.data.data || res.data.santri || res.data);
+      setSantriList(list);
     } catch (err: any) {
-      console.error('Fetch error:', err);
-      const errorMessage = err.response?.data?.detail || 'Gagal mengambil data santri';
-      setError(errorMessage);
+      setError(err.response?.data?.detail || 'Gagal mengambil data santri');
       setSantriList([]);
     } finally {
       setLoading(false);
     }
   };
 
-  fetchData();
-}, [router]);
-  
+  useEffect(() => {
+    fetchSantriList();
+  }, [router]);
 
-const startListening = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
+  // Fetch Full Santri Profile (Resilien Multi-Key)
+  const fetchFullSantriProfile = async (santriId: number | string) => {
+    setProfileLoading(true);
+    setOverallAnalysis('');
+    setDailyAiSummary('');
+    try {
+      const res = await api.get(`/musyrif/santri/${santriId}/profile`);
+      const data = res.data;
+
+      if (data) {
+        const profileObj = data.profile || data.data?.profile || data.santri || data;
+        setFullProfile(profileObj);
+
+        const rawSetoran =
+          data.histori_setoran_full ||
+          data.histori_setoran ||
+          data.setoran ||
+          data.data?.histori_setoran_full ||
+          data.data?.histori_setoran ||
+          [];
+        setHistoriSetoranFull(ensureArray(rawSetoran));
+
+        setRaportList(ensureArray(data.raport || data.data?.raport));
+        setStatusLogs(ensureArray(data.histori_status_log || data.data?.histori_status_log));
+
+        if (profileObj?.target_harian) {
+          setEditTargetHarian(profileObj.target_harian);
+        }
+      }
+    } catch (e) {
+      console.error('Gagal fetch profil santri:', e);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  // Switch Selected Santri
+  const handleSelectSantri = (santri: any) => {
+    setSelectedSantri(santri);
+    setEditStatus(santri.status_santri || 'hadir');
+    resetForm();
+
+    if (portalMode === 'input') {
+      setCurrentStep('ready_to_record');
+    } else {
+      fetchFullSantriProfile(santri.id);
+      setCurrentStep('student_detail');
+    }
+  };
+
+  const resetForm = () => {
+    setSurahId(null);
+    setSurah('');
+    setAyat('');
+    setStatusSetoran('Lancar');
+    setCatatanKoreksi('');
+    setAdaTeguran(false);
+    setJenisTeguran([]);
+    setCatatanTeguran('');
+    setCatatanMusyrif('');
+  };
+
+  // Voice Parser Realtime
+  const startListening = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (!SpeechRecognition) {
-      alert("Browser Anda tidak mendukung fitur suara. Gunakan Google Chrome.");
+      alert('Browser tidak mendukung Speech Recognition. Gunakan Chrome.');
+      return;
+    }
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'id-ID';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    accumulatedTextRef.current = '';
 
     recognition.onstart = () => {
       setIsListening(true);
       setCurrentStep('recording_session');
     };
 
-    recognition.onend = () => setIsListening(false);
-    
-    recognition.onerror = (event: any) => {
-  // Tangkap error not-allowed dan berikan peringatan yang ramah UX
-  if (event.error === 'not-allowed') {
-    alert("Izin Mikrofon diblokir! Tolong izinkan akses mikrofon di pengaturan browser Anda (ikon gembok di sebelah URL bar).");
-  } else if (event.error !== 'aborted') {
-    console.error("Mic error:", event.error);
-  }
-  
-  setIsListening(false);
-  setCurrentStep('ready_to_record'); // Kembalikan ke state siap merekam
-};
-
-    recognition.onresult = async (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setCatatanText((prev) => prev ? `${prev} ${transcript}` : transcript);
-
-      try {
-        // Kirim transcript mentah ke Backend AI Parser sesuai spesifikasi Bos Ray
-        const res = await api.post('/musyrif/parse-voice', { raw_text: transcript });
-        const parsedData = res.data?.data || res.data;
-        
-        if (parsedData?.surah) setSurah(parsedData.surah);
-        if (parsedData?.ayat) setAyat(parsedData.ayat);
-      } catch (err) {
-        console.warn("Gagal parsing backend, fallback manual:", err);
+    recognition.onresult = (event: any) => {
+      let currentTranscript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        currentTranscript += event.results[i][0].transcript + ' ';
       }
-
-      // Lanjut ke Step Review & Edit Draft
-      setCurrentStep('input_form');
+      accumulatedTextRef.current = currentTranscript.trim();
+      setCatatanMusyrif(accumulatedTextRef.current);
     };
 
+    recognition.onend = async () => {
+      setIsListening(false);
+      const finalTranscript = accumulatedTextRef.current.trim();
+      if (!finalTranscript) {
+        setCurrentStep('ready_to_record');
+        return;
+      }
+
+      setCurrentStep('input_form');
+      try {
+        const res = await api.post('/musyrif/parse-voice', { raw_text: finalTranscript });
+        const draft = res.data?.draft;
+        if (draft) {
+          if (draft.surah_id) setSurahId(draft.surah_id);
+          if (draft.surah_sahih) setSurah(draft.surah_sahih);
+          if (draft.ayat_standar) setAyat(draft.ayat_standar);
+          if (draft.status_kelancaran) setStatusSetoran(draft.status_kelancaran);
+          if (draft.catatan_koreksi) setCatatanKoreksi(draft.catatan_koreksi);
+          if (typeof draft.ada_teguran === 'boolean') setAdaTeguran(draft.ada_teguran);
+          if (Array.isArray(draft.jenis_teguran)) setJenisTeguran(draft.jenis_teguran);
+          if (draft.catatan_teguran) setCatatanTeguran(draft.catatan_teguran);
+          if (draft.catatan_musyrif) setCatatanMusyrif(draft.catatan_musyrif);
+        }
+      } catch (err) {
+        console.warn('Fallback ke teks mentah:', err);
+      }
+    };
+
+    recognitionRef.current = recognition;
     recognition.start();
   };
 
-  const fetchStatistikSantri = async (santriId: number | string) => {
+  // ACTION 1: Update Status Santri
+  const handleUpdateStatus = async (statusVal: string, ketVal: string = '') => {
+    if (!selectedSantri) return;
+    setActionLoading(true);
     try {
-      const res = await api.get(`/musyrif/statistik/setoran/${santriId}`);
-      setStats(ensureObject(res.data) ?? res.data);
-    } catch (e) {
-      console.error('Gagal fetch statistik', e);
-      setStats(null);
+      await api.put(`/musyrif/santri/${selectedSantri.id}/status`, {
+        status: statusVal,
+        keterangan: ketVal || null,
+      });
+
+      setSelectedSantri((prev: any) => ({ ...prev, status_santri: statusVal }));
+      setSantriList((prev) =>
+        prev.map((s) => (s.id === selectedSantri.id ? { ...s, status_santri: statusVal } : s))
+      );
+      if (fullProfile) setFullProfile((prev: any) => ({ ...prev, status_santri: statusVal }));
+
+      alert(`Status ${selectedSantri.nama_santri || selectedSantri.nama} berhasil diubah menjadi '${statusVal.toUpperCase()}'!`);
+      setShowStatusModal(false);
+      fetchFullSantriProfile(selectedSantri.id);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Gagal mengubah status santri');
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  // Trigger klik dari list nama santri
-  const handleSelectSantri = (santri: any) => {
-    setSelectedSantri(santri);
-    setStats(null);
-    setAnalisis('');
-    setSuccessMsg('');
-    setSurah('');
-    setAyat('');
-    setCatatanText('');
-
-    if (portalMode === 'input') {
-      // Sesuai arahan Bos Ray: Masuk ke step Ready to Record dulu (Low-Touch UX)
-      setCurrentStep('ready_to_record');
-    } else {
-      fetchStatistikSantri(santri.id);
-      setCurrentStep('student_detail');
+  // ACTION 2: Set Target Harian
+  const handleSaveTargetHarian = async () => {
+    if (!selectedSantri || !editTargetHarian.trim()) return;
+    setActionLoading(true);
+    try {
+      await api.put(`/musyrif/santri/${selectedSantri.id}/target-harian`, {
+        target_harian: editTargetHarian.trim(),
+      });
+      alert('Target Harian Berhasil Disimpan!');
+      fetchFullSantriProfile(selectedSantri.id);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Gagal menyimpan target harian');
+    } finally {
+      setActionLoading(false);
     }
   };
 
+  // ACTION 3: Daftar Ujian Santri
+  const handleDaftarUjian = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSantri || !tanggalUjian) return;
+    setActionLoading(true);
+    try {
+      await api.post(`/musyrif/santri/${selectedSantri.id}/daftar-ujian`, {
+        tanggal_ujian: tanggalUjian,
+        catatan_persiapan: catatanPersiapan || null,
+      });
+      alert(`Santri berhasil didaftarkan ujian untuk tanggal ${tanggalUjian}!`);
+      setShowUjianModal(false);
+      fetchFullSantriProfile(selectedSantri.id);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Gagal mendaftarkan ujian');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ACTION 4: Submit Hasil Ujian
+  const handleSubmitHasilUjian = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSantri) return;
+    setActionLoading(true);
+    try {
+      const res = await api.post(`/musyrif/santri/${selectedSantri.id}/hasil-ujian`, {
+        hasil: hasilUjian,
+        catatan: catatanHasilUjian || null,
+      });
+      alert(res.data?.detail || 'Hasil Ujian Berhasil Disimpan!');
+      setShowUjianModal(false);
+      fetchFullSantriProfile(selectedSantri.id);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Gagal menyimpan hasil ujian');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ACTION 5: Submit Setoran
   const handleVerifySetoran = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!surah.trim() || !ayat.trim()) {
-      alert("Isi data surah dan ayat terlebih dahulu!");
+      alert('Isi nama surah/juz dan ayat/kaca!');
       return;
     }
 
-    if (!selectedSantri?.id) {
-      alert('Pilih santri dulu!');
-      setInputLoading(false);
-      return;
-    }
-
+    const santriId = Number(selectedSantri?.id);
+    if (!santriId) return;
     setInputLoading(true);
 
     try {
-      const res = await fetchApi('/api/musyrif/setoran', {
-        method: 'POST',
-        body: JSON.stringify({
-          santri_id: selectedSantri.id,
-          surah,
-          ayat,
-          status_kelancaran: statusSetoran,
-          catatan_musyrif: catatanText,
-        }),
+      await api.post('/musyrif/setoran', {
+        santri_id: santriId,
+        surah_id: surahId,
+        surah_sahih: surah.trim(),
+        surah: surah.trim(),
+        ayat_standar: ayat.trim(),
+        ayat: ayat.trim(),
+        status_kelancaran: statusSetoran,
+        catatan_koreksi: catatanKoreksi.trim() || null,
+        ada_teguran: adaTeguran,
+        jenis_teguran: jenisTeguran,
+        catatan_teguran: catatanTeguran.trim() || null,
+        catatan_musyrif: catatanMusyrif.trim() || null,
       });
 
-      if (!res.ok) throw new Error('Gagal menyimpan data laporan.');
-
-      const newReport = {
-        id: `${selectedSantri.id}-${Date.now()}`,
-        santriId: selectedSantri.id,
-        santriName: selectedSantri.nama_santri,
-        surah,
-        ayat,
-        statusSetoran,
-        catatanText,
-        savedAt: new Date().toISOString(),
-        analisisAi: '',
-      };
-
-      const reportToPersist = {
-        ...newReport,
-        santriName: selectedSantri?.nama_santri || newReport.santriName,
-        savedAt: new Date().toISOString()
-      };
-
-      setSuccessMsg("Verified & Saved successfully! 🎉");
-      setLastSavedReport(reportToPersist);
-      setReportHistory((prev) => [reportToPersist, ...prev].slice(0, 10));
-      setSurah('');
-      setAyat('');
-      setCatatanText('');
-      setCurrentStep('input_form');
-      localStorage.setItem('tia_latest_report', JSON.stringify(reportToPersist));
-      notifyAdminOverviewRefresh();
-
+      alert('Setoran Berhasil Disimpan! 🎉');
+      resetForm();
+      fetchFullSantriProfile(santriId);
+      setCurrentStep('student_detail');
     } catch (err: any) {
-      alert(err.message);
+      alert(`Gagal Simpan Setoran:\n${err.response?.data?.detail || 'Error server'}`);
     } finally {
       setInputLoading(false);
     }
   };
 
-  const updateReportAnalysis = (reportId: string, analysisText: string) => {
-    setReportHistory((prev: any[]) => prev.map((report: any) => report.id === reportId ? { ...report, analisisAi: analysisText } : report));
-    setLastSavedReport((prev: any) => prev?.id === reportId ? { ...prev, analisisAi: analysisText } : prev);
+  // ACTION 6: Submit Raport
+  const handleSubmitRaport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSantri) return;
+    setActionLoading(true);
+    try {
+      await api.post('/musyrif/raport', {
+        santri_id: selectedSantri.id,
+        semester: semesterRaport,
+        nilai_harian: Number(nilaiHarian),
+        nilai_bulanan: Number(nilaiBulanan),
+        nilai_akhir: Number(nilaiAkhir),
+        catatan_musyrif: catatanRaport,
+      });
+      alert('Nilai Raport Berhasil Disimpan!');
+      setShowRaportModal(false);
+      fetchFullSantriProfile(selectedSantri.id);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Gagal menyimpan raport');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const handleGetAIAnalysis = async (e: React.MouseEvent<HTMLButtonElement> | null, report?: any) => {
-    if (e) e.preventDefault();
-
-    const reportToAnalyze = report ?? lastSavedReport ?? (selectedSantri ? {
-      id: `current-${selectedSantri.id}`,
-      santriId: selectedSantri.id,
-      santriName: selectedSantri.nama_santri,
-      surah: '',
-      ayat: '',
-      statusSetoran: 'lancar',
-      catatanText: '',
-      savedAt: new Date().toISOString(),
-      analisisAi: '',
-    } : null);
-
-    if (!reportToAnalyze?.santriId) return;
-
-    setAnalyzingReportId(reportToAnalyze.id);
-    updateReportAnalysis(reportToAnalyze.id, 'Musyrif AI sedang membaca laporan ini...');
-    setAnalisis('Musyrif AI sedang membaca laporan ini...');
-
-    const session = getSession();
-    const headers: Record<string, string> = session?.access_token || session?.token
-      ? { Authorization: `Bearer ${session.access_token || session.token}` }
-      : {};
-
+  // AI FUNCTION 1: Rangkuman Harian AI (Per Hari)
+  const handleFetchDailyAiSummary = async () => {
+    if (!selectedSantri) return;
+    setAiLoading(true);
+    setDailyAiSummary('Menggenerasi Rangkuman AI untuk tanggal ' + selectedDate + '...');
     try {
-      const res = await api.post(
-        `/musyrif/statistik/analisis/${reportToAnalyze.santriId}`,
-        {},
-        { headers: { ...headers, 'Content-Type': 'application/json' } }
-      );
-
-      const data = res.data;
-      const payload = ensureObject<{ analisis_ai?: string }>(data);
-      const aiText = payload?.analisis_ai || (data as { analisis_ai?: string })?.analisis_ai || 'Analisis AI belum tersedia untuk laporan ini.';
-      updateReportAnalysis(reportToAnalyze.id, aiText);
-      setAnalisis(aiText);
-    } catch {
-      const errorText = 'Koneksi AI terputus, coba lagi.';
-      updateReportAnalysis(reportToAnalyze.id, errorText);
-      setAnalisis(errorText);
+      const res = await api.post(`/musyrif/ai/rangkuman-harian/${selectedSantri.id}`, {
+        tanggal: selectedDate,
+      });
+      setDailyAiSummary(res.data?.rangkuman_ai || 'Tidak ada rangkuman.');
+    } catch (err) {
+      setDailyAiSummary('Gagal terhubung ke layanan AI.');
     } finally {
-      setAnalyzingReportId(null);
+      setAiLoading(false);
     }
+  };
+
+  // AI FUNCTION 2: Analisis Keseluruhan (Overall Trend)
+  const handleFetchOverallAnalysis = async () => {
+    if (!selectedSantri) return;
+    setAiLoading(true);
+    setOverallAnalysis('Senior Musyrif AI sedang menganalisis SELURUH histori setoran...');
+    try {
+      const res = await api.post(`/musyrif/statistik/analisis/${selectedSantri.id}`);
+      setOverallAnalysis(res.data?.data?.analisis_ai || 'Belum ada data analisis.');
+    } catch (err) {
+      setOverallAnalysis('Gagal memproses analisis tren.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Helper Filter Setoran Berdasarkan Tanggal yang Dipilih (Mendukung Multi-Format)
+  const filteredSetoranByDate = historiSetoranFull.filter((s) => {
+    if (!selectedDate) return true;
+    const timeStr = String(s.waktu_setoran || s.waktu || s.created_at || s.tanggal || s.date || '');
+    if (!timeStr) return false;
+
+    const [yyyy, mm, dd] = selectedDate.split('-');
+    const formattedDDMM = `${dd}-${mm}-${yyyy}`;
+    const formattedSlash = `${yyyy}/${mm}/${dd}`;
+    const formattedSlashReverse = `${dd}/${mm}/${yyyy}`;
+
+    return (
+      timeStr.includes(selectedDate) ||
+      timeStr.includes(formattedDDMM) ||
+      timeStr.includes(formattedSlash) ||
+      timeStr.includes(formattedSlashReverse)
+    );
+  });
+
+  // Helper Hitung Counter Ringkasan Status
+  const statusCounters = statusLogs.reduce(
+    (acc: any, log: any) => {
+      const st = (log.status || '').toLowerCase();
+      if (st === 'hadir') acc.hadir++;
+      else if (st === 'izin') acc.izin++;
+      else if (st === 'persiapan_ujian') acc.persiapan_ujian++;
+      else if (st === 'remed_ujian') acc.remed_ujian++;
+      return acc;
+    },
+    { hadir: 0, izin: 0, persiapan_ujian: 0, remed_ujian: 0 }
+  );
+
+  const renderStatusBadge = (statusStr: string) => {
+    const s = (statusStr || 'hadir').toLowerCase();
+    if (s === 'hadir') {
+      return <span className="bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Hadir</span>;
+    } else if (s === 'izin') {
+      return <span className="bg-amber-100 border border-amber-300 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Izin</span>;
+    } else if (s === 'persiapan_ujian') {
+      return <span className="bg-sky-100 border border-sky-300 text-sky-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Persiapan Ujian</span>;
+    } else if (s === 'remed_ujian') {
+      return <span className="bg-rose-100 border border-rose-300 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Remedial</span>;
+    }
+    return <span className="bg-slate-200 border border-slate-300 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">{s}</span>;
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0b1220] flex items-center justify-center text-slate-400 font-mono text-xs tracking-wider">
-        🔮 LOADING TIA SYSTEM PROTOCOL...
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-emerald-600 font-mono text-xs tracking-wider">
+        🌱 MEMUAT PORTAL HALAQAH...
       </div>
     );
   }
 
-
-
-return(	
-   <div className="min-h-screen bg-gnome-darker text-slate-800 flex justify-center p-4">
-      <div className="w-full max-w-md flex flex-col gap-6 pt-6">
-
-        {/* Top Header */}
-        <div className="flex justify-between items-center bg-gnome-card p-4 rounded-2xl border border-gnome-border">
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex justify-center p-4">
+      <div className="w-full max-w-md flex flex-col gap-5 pt-4">
+        
+        {/* TOP HEADER */}
+        <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gnome-green rounded-full flex items-center justify-center text-white font-bold shadow-lg">
+            <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold shadow-md">
               {(musyrifName || 'M').charAt(0).toUpperCase()}
             </div>
             <div>
-              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 block">ASSALAMUALAIKUM 👋</span>
-              <h2 className="text-md font-bold text-slate-800">{musyrifName}</h2>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-emerald-600 block">
+                HALAQAH MUSYRIF
+              </span>
+              <h2 className="text-sm font-bold text-slate-800">{musyrifName}</h2>
             </div>
           </div>
           <button
@@ -358,375 +556,913 @@ return(
           </button>
         </div>
 
-        {/* ----------------- STEP 1: DASHBOARD / MENU UTAMA ----------------- */}
+        {/* STEP 1: DASHBOARD MENU UTAMA */}
         {currentStep === 'menu' && (
           <div className="flex flex-col gap-4 animate-fadeIn">
-
-            {/* CARD 1: INPUT DATA */}
             <div
-              onClick={() => { setPortalMode('input'); setCurrentStep('select_student'); }}
-              className="bg-gnome-green p-8 rounded-3xl cursor-pointer shadow-xl hover:scale-[1.01] transition transform active:scale-[0.99] group text-center relative overflow-hidden"
+              onClick={() => {
+                setPortalMode('input');
+                setCurrentStep('select_student');
+              }}
+              className="bg-emerald-600 p-8 rounded-3xl cursor-pointer shadow-xl hover:bg-emerald-500 transition transform active:scale-[0.99] text-center"
             >
-              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
-                </svg>
+              <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 backdrop-blur-sm">
+                <span className="text-2xl">🎙️</span>
               </div>
-              <span className="text-[11px] font-bold text-emerald-100 tracking-widest uppercase block mb-1">MULAI SEKARANG</span>
-              <h3 className="text-2xl font-black text-white">Input Data Santri</h3>
+              <span className="text-[10px] font-bold text-emerald-100 tracking-widest uppercase block mb-1">
+                INPUT LIVE SESSION
+              </span>
+              <h3 className="text-xl font-black text-white">Input Setoran Santri</h3>
             </div>
 
-            {/* CARD 2: PANTAU & ANALISIS */}
             <div
-              onClick={() => { setPortalMode('monitor'); setCurrentStep('select_student'); }}
-              className="bg-gnome-card border border-gnome-border p-6 rounded-3xl cursor-pointer hover:bg-slate-50 transition flex items-center gap-5"
+              onClick={() => {
+                setPortalMode('monitor');
+                setCurrentStep('select_student');
+              }}
+              className="bg-white border border-emerald-100 p-6 rounded-3xl cursor-pointer hover:bg-emerald-50/50 transition flex items-center gap-4 shadow-sm"
             >
-              <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center border border-emerald-100">
-                <svg className="w-6 h-6 text-gnome-green" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25A2.25 2.25 0 0 1 13.5 8V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
-                </svg>
+              <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center border border-emerald-200 text-2xl">
+                📊
               </div>
               <div>
-                <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase block">PANTAU & ANALISIS</span>
-                <h4 className="text-lg font-bold text-slate-800">Profil Santri</h4>
-              </div>
-            </div>
-
-            {/* CARD 3: PORTAL ADMIN */}
-           {isAdminRole(userRole) && (
-            <button
-              type="button"
-              onClick={() => router.push('/admin')}
-              className="w-full bg-slate-50 border border-slate-200 p-5 rounded-3xl flex items-center justify-between hover:bg-slate-100 transition"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-gnome-green border border-emerald-200">
-                  🛡️
-                </div>
-                <span className="text-sm font-semibold text-slate-700">Portal Admin</span>
-              </div>
-            </button>
-          )}
-          </div>  
-        )}
-      
-          
-{/* ----------------- STEP 2: LIST SELEKSI NAMA SANTRI ----------------- */}
-{currentStep === 'select_student' && (
-  <div className="bg-gnome-card p-6 rounded-3xl border border-gnome-border flex flex-col gap-4 animate-fadeIn">
-    <div className="flex justify-between items-center mb-1">
-      <h3 className="text-sm font-bold text-slate-500 tracking-wider uppercase">
-        {portalMode === 'input' ? '🎙️ Pilih Santri Penyetor' : '📊 Pilih Santri Dipantau'}
-      </h3>
-      <button onClick={() => setCurrentStep('menu')} className="text-xs text-slate-400 hover:text-slate-700">← Kembali</button>
-    </div>
-
-    <p className="text-xs text-slate-500 italic bg-slate-100 p-3 rounded-xl border border-slate-200">
-      {portalMode === 'input'
-        ? 'Silahkan klik nama santri di bawah untuk mulai mengoreksi teks laporan hafalan.'
-        : 'Silahkan klik nama santri di bawah untuk melihat grafik serta memicu rekomendasi AI.'}
-    </p>
-
-    <div className="flex flex-col gap-2.5 mt-2">
-      {error && (
-        <p className="text-xs text-center text-red-500 py-2">{error}</p>
-      )}
-      {ensureArray(santriList).length === 0 ? (
-        <p className="text-xs text-center text-slate-400 py-4">Data santri kosong.</p>
-      ) : (
-        ensureArray(santriList).map((s: any) => (
-          <div
-            key={s.id}
-            onClick={() => handleSelectSantri(s)}
-            className="bg-white hover:bg-emerald-50 p-4 rounded-2xl cursor-pointer border border-gnome-border flex items-center gap-4 transition group shadow-sm"
-          >
-            <div className="w-11 h-11 bg-gnome-green rounded-full flex items-center justify-center border border-emerald-400 text-xs font-bold text-white group-hover:scale-105 transition">
-              {s.nama_santri.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 group-hover:text-gnome-green transition">{s.nama_santri}</h4>
-              <p className="text-[11px] text-slate-400 mt-0.5">Nomor Induk: {s.nomor_induk}</p>
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-  </div>
-)}
-
-{/* ----------------- STEP 3: READY TO RECORD ----------------- */}
-{currentStep === 'ready_to_record' && selectedSantri && (
-  <div className="bg-white p-8 rounded-3xl border border-gnome-border flex flex-col items-center justify-center text-center gap-6 animate-fadeIn shadow-sm">
-    <div>
-      <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Siap Merekam Setoran</span>
-      <h3 className="text-xl font-black text-slate-800">{selectedSantri.nama_santri}</h3>
-      <p className="text-xs text-slate-500 mt-1">Nomor Induk: {selectedSantri.nomor_induk}</p>
-    </div>
-
-    {/* Tombol Sadar "Mulai Bicara" sesuai instruksi Low-Touch UX */}
-    <button
-      type="button"
-      onClick={startListening}
-      className="w-full bg-gnome-green hover:bg-emerald-600 text-white font-black py-5 px-6 rounded-2xl text-xs uppercase tracking-widest shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
-    >
-      <span className="text-xl">🎙️</span> Mulai Bicara
-    </button>
-
-    <button
-      type="button"
-      onClick={() => setCurrentStep('select_student')}
-      className="text-xs text-slate-400 hover:text-slate-600 transition"
-    >
-      ← Pilih Santri Lain
-    </button>
-  </div>
-)}
-
-{/* ----------------- STEP 3: RECORDING SESSION (VOICE LISTENING) ----------------- */}
-{currentStep === 'recording_session' && selectedSantri && (
-  <div className="bg-white p-8 rounded-3xl border border-gnome-border flex flex-col items-center justify-center text-center gap-6 animate-fadeIn shadow-sm">
-    <div>
-      <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Sesi Rekaman Suara</span>
-      <h3 className="text-lg font-black text-slate-800">{selectedSantri.nama_santri}</h3>
-    </div>
-
-    {/* Indikator Mikrofon Pulsing */}
-    <div className="relative flex items-center justify-center my-4">
-      <div className={`absolute w-32 h-32 rounded-full bg-emerald-500/20 ${isListening ? 'animate-ping' : ''}`}></div>
-      <button
-        type="button"
-        onClick={startListening}
-        className="w-24 h-24 rounded-full bg-gnome-green flex items-center justify-center text-3xl text-white shadow-xl relative z-10 hover:scale-105 transition active:scale-95"
-      >
-        🎙️
-      </button>
-    </div>
-
-    <p className="text-xs text-slate-500 italic max-w-xs">
-      {isListening ? "Sedang mendengarkan... Silahkan sebutkan nama surah dan ayat." : "Tekan ikon mikrofon di atas untuk mulai merekam bacaan santri."}
-    </p>
-
-    <div className="flex gap-3 w-full mt-2">
-      <button
-        type="button"
-        onClick={() => setCurrentStep('select_student')}
-        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3 rounded-xl text-xs font-bold uppercase transition"
-      >
-        Kembali
-      </button>
-      <button
-        type="button"
-        onClick={startListening}
-        className="flex-1 bg-gnome-green hover:bg-emerald-600 text-white py-3 rounded-xl text-xs font-bold uppercase transition shadow-md"
-      >
-        {isListening ? "Mendengarkan..." : "Mulai Rekam 🎙️"}
-      </button>
-    </div>
-  </div>
-)}
-
-{/* ----------------- STEP 3: DETAIL PANTAU & ANALISIS (COLLAPSIBLE AI DROPDOWN) ----------------- */}
-{currentStep === 'student_detail' && selectedSantri && (
-  <div className="flex flex-col gap-4 animate-fadeIn w-full max-w-md mx-auto pb-6">
-
-    {/* Header Profil */}
-    <div className="bg-white border border-gnome-border p-6 rounded-3xl flex flex-col items-center justify-center text-center shadow-sm">
-      <div className="w-16 h-16 rounded-full bg-gnome-green flex items-center justify-center text-2xl font-black text-white mb-3 border-2 border-emerald-200">
-        {selectedSantri.nama_santri?.charAt(0).toUpperCase() || 'S'}
-      </div>
-      <h1 className="text-xl font-black text-slate-800 tracking-wide">{selectedSantri.nama_santri}</h1>
-      <div className="flex items-center gap-2 mt-2">
-        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md uppercase tracking-widest">Terkonfirmasi</span>
-        <span className="text-[10px] text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-          ID: {selectedSantri.nomor_induk || selectedSantri.student_id || '12344'}
-        </span>
-      </div>
-    </div>
-
-    {/* Tombol Trigger Global AI */}
-    <button
-      type="button"
-      onClick={handleGetAIAnalysis}
-      className="w-full bg-gnome-green hover:bg-emerald-600 text-white font-black py-4 px-4 rounded-2xl text-[11px] tracking-widest uppercase transition-all active:scale-[0.98]"
-    >
-      🤖 JALANKAN ANALISIS PERFORMA AI GLOBAL
-    </button>
-
-    {/* Output Global AI */}
-    {analisis && (
-      <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm animate-fadeIn">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-gnome-green mb-3">Hasil Analisis Performa</div>
-        <div className="text-xs text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{analisis}</div>
-      </div>
-    )}
-
-    {/* Histori Laporan */}
-    <div className="bg-white p-5 rounded-3xl border border-gnome-border shadow-sm">
-      <div className="flex justify-between items-end border-b border-slate-100 pb-4 mb-4">
-        <div>
-          <span className="text-[9px] uppercase tracking-widest font-bold text-slate-400 block mb-1">Total Kehadiran</span>
-          <p className="text-3xl font-black text-slate-800">{stats?.total_setoran || 0}</p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        {ensureArray(stats?.riwayat_lengkap).map((report: any, idx: number) => {
-          const isAiExpanded = expandedAiReports.includes(report.id || idx);
-          return (
-            <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-gnome-border hover:border-emerald-200 transition-all">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm">{report.surah}</h4>
-                  <p className="text-[10px] text-slate-500">Ayat {report.ayat} • {report.waktu}</p>
-                </div>
-                <span className={`text-[9px] px-2 py-1 rounded font-black uppercase ${report.status === 'lancar' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {report.status}
+                <span className="text-[10px] font-bold text-emerald-600 tracking-wider uppercase block">
+                  MONITORING & AI ANALYTICS
                 </span>
+                <h4 className="text-md font-bold text-slate-800">Profil & Statistik Santri</h4>
               </div>
+            </div>
 
-              {report.catatan && <p className="text-xs text-slate-600 bg-white p-2 rounded-lg border border-slate-100 mb-2 italic">"{report.catatan}"</p>}
-
-              {/* Tombol Dropdown AI */}
+            {isAdminRole(userRole) && (
               <button
-                onClick={() =>
-                  setExpandedAiReports(
-                    isAiExpanded
-                      ? expandedAiReports.filter((i) => i !== (report.id || idx))
-                      : [...expandedAiReports, report.id || idx]
-                  )
-                }
-                className="w-full flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase p-2 hover:text-gnome-green"
+                type="button"
+                onClick={() => router.push('/admin')}
+                className="w-full bg-white border border-slate-200 p-4 rounded-2xl flex items-center justify-between hover:bg-slate-100 transition shadow-sm"
               >
-                🤖 {isAiExpanded ? 'Sembunyikan Analisa' : 'Lihat Analisa AI'}
-                <span>{isAiExpanded ? '▲' : '▼'}</span>
-              </button>
-
-              {isAiExpanded && (
-                <div className="text-xs text-slate-700 mt-2 p-3 bg-white rounded-lg border border-emerald-100 animate-fadeIn">
-                  {report.analisisAi || 'Belum ada analisa AI tersedia.'}
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🛡️</span>
+                  <span className="text-xs font-semibold text-slate-700">Masuk Portal Admin</span>
                 </div>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* STEP 2: PILIH SANTRI */}
+        {currentStep === 'select_student' && (
+          <div className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold text-slate-500 tracking-wider uppercase">
+                {portalMode === 'input' ? '🎙️ Pilih Santri Penyetor' : '📊 Pilih Santri Dipantau'}
+              </h3>
+              <button onClick={() => setCurrentStep('menu')} className="text-xs text-emerald-600 font-semibold hover:text-emerald-700">
+                ← Kembali
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 mt-1">
+              {error && <p className="text-xs text-center text-red-500 py-2">{error}</p>}
+              {santriList.length === 0 ? (
+                <p className="text-xs text-center text-slate-400 py-4">Belum ada data santri.</p>
+              ) : (
+                santriList.map((s: any) => (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSelectSantri(s)}
+                    className="bg-slate-50 hover:bg-emerald-50/70 p-3.5 rounded-2xl cursor-pointer border border-slate-200 hover:border-emerald-300 flex items-center justify-between transition group shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center border border-emerald-400 text-xs font-bold text-white">
+                        {(s.nama_santri || s.nama || 'S').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800">{s.nama_santri || s.nama}</h4>
+                        <p className="text-[10px] text-slate-500">NIS: {s.nomor_induk || '-'}</p>
+                      </div>
+                    </div>
+                    <div>{renderStatusBadge(s.status_santri)}</div>
+                  </div>
+                ))
               )}
             </div>
-          );
-        })}
-      </div>
-    </div>
-  </div>
-)}
-
-{/* ----------------- STEP 4: FORM INPUT LENGKAP ----------------- */}
-{currentStep === 'input_form' && selectedSantri && (
-  <div className="flex flex-col gap-4 animate-fadeIn w-full max-w-md mx-auto pb-8">
-    
-    {/* Header Mini Profil */}
-    <div className="bg-white border border-gnome-border p-4 rounded-2xl flex items-center justify-between shadow-sm">
-      <div>
-        <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Input Untuk</p>
-        <p className="text-sm font-black text-slate-800">{selectedSantri.nama_santri}</p>
-      </div>
-      <button 
-        onClick={() => setCurrentStep('select_student')}
-        className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition"
-      >
-        Batal
-      </button>
-    </div>
-
-    {/* FORM UTAMA */}
-    <div className="bg-white border border-gnome-border p-6 rounded-3xl shadow-sm">
-      <form onSubmit={handleVerifySetoran} className="flex flex-col gap-4">
-        
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Surah</label>
-            <input
-              type="text"
-              placeholder="Contoh: Al-Mulk"
-              value={surah}
-              onChange={(e) => setSurah(e.target.value)}
-              className="w-full bg-slate-50 text-slate-800 border border-gnome-border rounded-xl p-3 text-xs focus:border-gnome-green outline-none"
-            />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Ayat</label>
-            <input
-              type="text"
-              placeholder="Contoh: 1-5"
-              value={ayat}
-              onChange={(e) => setAyat(e.target.value)}
-              className="w-full bg-slate-50 text-slate-800 border border-gnome-border rounded-xl p-3 text-xs focus:border-gnome-green outline-none"
-            />
-          </div>
-        </div>
+        )}
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Status Kelancaran</label>
-          <select
-            value={statusSetoran}
-            onChange={(e) => setStatusSetoran(e.target.value)}
-            className="w-full bg-slate-50 text-slate-800 border border-gnome-border rounded-xl p-3 text-xs focus:border-gnome-green outline-none"
-          >
-            <option value="lancar">🟢 Mumtaz (Sangat Lancar)</option>
-            <option value="sedang">🟡 Jayyid (Sedang)</option>
-            <option value="kurang">🔴 Dhoif (Kurang)</option>
-          </select>
-        </div>
+        {/* STEP 3: READY TO RECORD */}
+        {currentStep === 'ready_to_record' && selectedSantri && (
+          <div className="bg-white p-6 rounded-3xl border border-emerald-100 flex flex-col items-center text-center gap-5 animate-fadeIn shadow-sm">
+            <div>
+              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block mb-1">
+                Siap Merekam Setoran Live
+              </span>
+              <h3 className="text-lg font-black text-slate-800">{selectedSantri.nama_santri || selectedSantri.nama}</h3>
+              <div className="mt-2">{renderStatusBadge(selectedSantri.status_santri)}</div>
+            </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest ml-1">Catatan Musyrif</label>
-          <div className="relative">
-            <textarea
-              rows={3}
-              value={catatanText}
-              onChange={(e) => setCatatanText(e.target.value)}
-              className="w-full bg-slate-50 text-slate-800 border border-gnome-border rounded-xl p-3 pr-12 text-xs focus:border-gnome-green outline-none resize-none"
-            />
+            {selectedSantri.status_santri && selectedSantri.status_santri !== 'hadir' && (
+              <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl text-xs text-amber-800 text-left w-full">
+                <p className="font-bold mb-1">⚠️ Status Santri: {selectedSantri.status_santri.toUpperCase()}</p>
+                <p className="mb-2 text-[11px] text-amber-700">Backend menolak input setoran jika status santri bukan "Hadir".</p>
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => handleUpdateStatus('hadir')}
+                  className="bg-amber-600 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] uppercase hover:bg-amber-500 transition"
+                >
+                  {actionLoading ? 'Memproses...' : 'Ubah Status Jadi HADIR'}
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={startListening}
-              className={`absolute right-2 bottom-2 p-2 rounded-lg border ${isListening ? 'bg-red-50 text-red-500 border-red-200' : 'bg-white text-gnome-green border-gnome-border'}`}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-4 px-6 rounded-2xl text-xs uppercase tracking-widest shadow-lg transition flex items-center justify-center gap-2"
             >
-              🎙️
+              <span className="text-lg">🎙️</span> Mulai Bicara / Rekam
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentStep('select_student')}
+              className="text-xs text-slate-500 hover:text-slate-700"
+            >
+              ← Pilih Santri Lain
             </button>
           </div>
-        </div>
+        )}
 
-        <button
-          type="submit"
-          className="w-full bg-gnome-green hover:bg-emerald-600 text-white font-black py-4 rounded-xl text-[11px] uppercase tracking-widest transition"
-        >
-          ✓ VERIFIED & SAVE
-        </button>
-      </form>
-    </div>
+        {/* STEP 3: SESI REKAMAN VOICE */}
+        {currentStep === 'recording_session' && selectedSantri && (
+          <div className="bg-white p-6 rounded-3xl border border-emerald-100 flex flex-col items-center text-center gap-5 animate-fadeIn shadow-sm">
+            <div>
+              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-widest block mb-1">
+                Live Voice Assistant Active
+              </span>
+              <h3 className="text-md font-black text-slate-800">{selectedSantri.nama_santri || selectedSantri.nama}</h3>
+            </div>
 
-    {/* OUTPUT ANALISA SETELAH SIMPAN */}
-    {successMsg && lastSavedReport && (
-      <div className="bg-white border border-gnome-border rounded-3xl p-6 shadow-sm animate-fadeIn">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Ringkasan Data Baru</div>
-        
-        <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl mb-4 text-xs text-emerald-800 font-bold">
-          {successMsg}
-        </div>
+            <div className="relative flex items-center justify-center my-2">
+              <div className={`absolute w-28 h-28 rounded-full bg-emerald-500/20 ${isListening ? 'animate-ping' : ''}`}></div>
+              <button
+                type="button"
+                onClick={startListening}
+                className={`w-20 h-20 rounded-full flex items-center justify-center text-2xl text-white shadow-xl relative z-10 ${
+                  isListening ? 'bg-red-500' : 'bg-emerald-600'
+                }`}
+              >
+                {isListening ? '⏹️' : '🎙️'}
+              </button>
+            </div>
 
-        <button
-          onClick={(e) => handleGetAIAnalysis(e, lastSavedReport)}
-          className="w-full bg-slate-800 hover:bg-black text-white font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition mb-4"
-        >
-          🤖 AMBIL ANALISA AI
-        </button>
+            <p className="text-xs text-slate-600 font-medium max-w-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
+              {catatanMusyrif || 'Mendengarkan ucapan musyrif... (Contoh: "Juz 30 kaca 3 kelancaran lancar catatan qalqalah")'}
+            </p>
 
-        {(lastSavedReport.analisisAi || analisis) && (
-          <div className="bg-slate-50 p-4 rounded-xl border border-gnome-border text-xs text-slate-700 leading-relaxed font-medium">
-            <span className="block text-[9px] font-bold text-gnome-green uppercase mb-2">Hasil Insight AI:</span>
-            {lastSavedReport.analisisAi || analisis}
+            <button
+              type="button"
+              onClick={startListening}
+              className="w-full py-3.5 bg-red-600 hover:bg-red-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition"
+            >
+              ⏹️ SELESAI & PROSES BACAAN
+            </button>
           </div>
         )}
+
+        {/* STEP 3: STUDENT DETAIL & MONITORING PORTAL */}
+        {currentStep === 'student_detail' && selectedSantri && (
+          <div className="flex flex-col gap-4 animate-fadeIn w-full pb-8">
+            <div className="flex justify-between items-center">
+              <button
+                onClick={() => setCurrentStep('select_student')}
+                className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+              >
+                ← Kembali ke Daftar Santri
+              </button>
+            </div>
+
+            {/* Profile Card Header */}
+            <div className="bg-white border border-emerald-100 p-5 rounded-3xl flex flex-col items-center text-center shadow-sm">
+              <div className="w-14 h-14 rounded-full bg-emerald-600 flex items-center justify-center text-xl font-black text-white mb-2 border-2 border-emerald-400">
+                {(selectedSantri.nama_santri || selectedSantri.nama || 'S').charAt(0).toUpperCase()}
+              </div>
+              <h1 className="text-lg font-black text-slate-800">
+                {fullProfile?.nama_santri || selectedSantri.nama_santri || selectedSantri.nama}
+              </h1>
+              
+              <div className="flex items-center gap-2 mt-2">
+                {renderStatusBadge(fullProfile?.status_santri || selectedSantri.status_santri)}
+                <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                  NIS: {fullProfile?.nomor_induk || selectedSantri.nomor_induk || '-'}
+                </span>
+              </div>
+
+              {/* Action Buttons for Status & Exam Modals */}
+              <div className="flex gap-3 mt-5 w-full">
+                <button
+                  type="button"
+                  onClick={() => setShowStatusModal(true)}
+                  className="flex-1 flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-bold py-2.5 rounded-xl border border-slate-200 uppercase transition shadow-sm"
+                >
+                  <span className="text-sm">⚙️</span>
+                  <span>Edit Target</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowUjianModal(true)}
+                  className="flex-1 flex items-center justify-center gap-2 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[10px] font-bold py-2.5 rounded-xl border border-sky-200 uppercase transition shadow-sm"
+                >
+                  <span className="text-sm">📝</span>
+                  <span>Kelola Ujian</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Navigation Tabs (Desain Ditumpuk agar tidak wrapping) */}
+            <div className="flex bg-slate-100/80 p-1.5 rounded-2xl gap-1.5 border border-slate-200 shadow-inner mt-1">
+              <button
+                onClick={() => setActiveTab('setoran_daily')}
+                className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-bold uppercase rounded-xl transition ${
+                  activeTab === 'setoran_daily' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/60' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <span className="text-base">📅</span>
+                <span>Harian</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('profile')}
+                className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-bold uppercase rounded-xl transition ${
+                  activeTab === 'profile' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/60' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <span className="text-base">👤</span>
+                <span>Profile</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('raport_log')}
+                className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 text-[10px] font-bold uppercase rounded-xl transition ${
+                  activeTab === 'raport_log' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200/60' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <span className="text-base">📑</span>
+                <span>Raport</span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT SECTION */}
+            {profileLoading ? (
+              <div className="bg-white p-8 rounded-3xl text-center text-xs text-emerald-600 font-mono border border-emerald-100">
+                🌱 Memuat data profil santri...
+              </div>
+            ) : (
+              <>
+                {/* TAB 1: SETORAN PER HARI (DENGAN TANGGAL & AI RANGKUMAN HARIAN) */}
+                {activeTab === 'setoran_daily' && (
+                  <div className="flex flex-col gap-4">
+                    
+                    {/* Picker Tanggal */}
+                    <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between gap-3 mt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-500 text-lg">🗓️</span>
+                        <label className="text-[10px] font-bold uppercase text-slate-600 tracking-wider whitespace-nowrap">
+                          Pilih Tanggal
+                        </label>
+                      </div>
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition shadow-inner w-full max-w-[145px]"
+                      />
+                    </div>
+
+                    {/* AI Buttons Bar (Desain Ditumpuk agar teks rapi) */}
+                    <div className="grid grid-cols-2 gap-3 mt-1">
+                      <button
+                        type="button"
+                        disabled={aiLoading}
+                        onClick={handleFetchDailyAiSummary}
+                        className="flex flex-col items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold py-3.5 px-2 rounded-2xl uppercase tracking-wider transition shadow-md border border-emerald-500"
+                      >
+                        <span className="text-xl">⚡</span>
+                        <span className="text-center">Rangkuman<br/>Hari Ini</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={aiLoading}
+                        onClick={handleFetchOverallAnalysis}
+                        className="flex flex-col items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-[10px] font-bold py-3.5 px-2 rounded-2xl uppercase tracking-wider transition shadow-md border border-teal-500"
+                      >
+                        <span className="text-xl">📈</span>
+                        <span className="text-center">Analisis<br/>Keseluruhan</span>
+                      </button>
+                    </div>
+
+                    {/* AI Daily Summary Output */}
+                    {dailyAiSummary && (
+                      <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl shadow-sm animate-fadeIn">
+                        <div className="text-[10px] font-bold uppercase text-emerald-700 tracking-wider mb-2">
+                          📋 Rangkuman AI Per Hari ({selectedDate}):
+                        </div>
+                        <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
+                          {dailyAiSummary}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* AI Overall Trend Output */}
+                    {overallAnalysis && (
+                      <div className="bg-white text-slate-800 p-4 rounded-2xl shadow-sm animate-fadeIn border border-teal-200">
+                        <div className="text-[10px] font-bold uppercase text-teal-700 tracking-wider mb-2">
+                          🧠 Analisis Grafik Performa Keseluruhan (Overall):
+                        </div>
+                        <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
+                          {overallAnalysis}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* List Setoran Berdasarkan Tanggal yang Dipilih */}
+                    <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">
+                          Setoran Tanggal {selectedDate}
+                        </span>
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                          {filteredSetoranByDate.length} Rekaman
+                        </span>
+                      </div>
+
+                      {filteredSetoranByDate.length === 0 ? (
+                        <p className="text-xs text-center text-slate-400 py-6">
+                          Tidak ada catatan setoran pada tanggal {selectedDate}.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {filteredSetoranByDate.map((item: any, idx: number) => (
+                            <div key={item.id || idx} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                              <div className="flex justify-between items-start mb-1">
+                                <div>
+                                  <h4 className="font-bold text-slate-800 text-xs">{item.surah}</h4>
+                                  <p className="text-[10px] text-slate-500">
+                                    Ayat {item.ayat} • {item.waktu_setoran || item.waktu || '-'}
+                                  </p>
+                                </div>
+                                <span
+                                  className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
+                                    (item.status_kelancaran || item.status || '').toLowerCase().includes('lancar')
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  }`}
+                                >
+                                  {item.status_kelancaran || item.status}
+                                </span>
+                              </div>
+                              {item.catatan_musyrif && (
+                                <p className="text-[11px] text-slate-600 italic bg-white p-2 rounded-xl border border-slate-200 mt-2">
+                                  "{item.catatan_musyrif}"
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                )}
+
+                {/* TAB 2: PROFIL & TARGET */}
+                {activeTab === 'profile' && (
+                  <div className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 shadow-sm animate-fadeIn">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2">
+                      Informasi Akademik Santri
+                    </h3>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <span className="text-[9px] font-bold uppercase text-slate-400 block">Kelompok</span>
+                        <p className="text-xs font-bold text-slate-800 mt-1">{fullProfile?.nama_kelompok || '-'}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                        <span className="text-[9px] font-bold uppercase text-slate-400 block">Musyrif</span>
+                        <p className="text-xs font-bold text-slate-800 mt-1">{fullProfile?.nama_musyrif || '-'}</p>
+                      </div>
+                    </div>
+
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2 mt-2">
+                      Target & Ujian
+                    </h3>
+
+                    <div className="flex flex-col gap-2.5">
+                      <div className="bg-emerald-50 p-3.5 rounded-2xl border border-emerald-200 flex justify-between items-center">
+                        <div>
+                          <span className="text-[9px] font-bold uppercase text-emerald-700 block">Target Semester</span>
+                          <p className="text-xs font-bold text-slate-800 mt-0.5">{fullProfile?.target_semester || 'Belum ditentukan'}</p>
+                        </div>
+                        <span className="text-lg">🎯</span>
+                      </div>
+
+                      <div className="bg-emerald-50 p-3.5 rounded-2xl border border-emerald-200 flex justify-between items-center">
+                        <div>
+                          <span className="text-[9px] font-bold uppercase text-emerald-700 block">Target Harian</span>
+                          <p className="text-xs font-bold text-slate-800 mt-0.5">{fullProfile?.target_harian || 'Belum ditentukan'}</p>
+                        </div>
+                        <span className="text-lg">📖</span>
+                      </div>
+
+                      <div className="bg-sky-50 p-3.5 rounded-2xl border border-sky-200 flex justify-between items-center">
+                        <div>
+                          <span className="text-[9px] font-bold uppercase text-sky-700 block">Tanggal Ujian</span>
+                          <p className="text-xs font-bold text-slate-800 mt-0.5">{fullProfile?.tanggal_ujian || 'Belum ada jadwal'}</p>
+                          {fullProfile?.catatan_persiapan_ujian && (
+                            <p className="text-[10px] text-slate-500 mt-1">Catatan: {fullProfile.catatan_persiapan_ujian}</p>
+                          )}
+                        </div>
+                        <span className="text-lg">📅</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: RAPORT & HISTORI STATUS LOG */}
+                {activeTab === 'raport_log' && (
+                  <div className="flex flex-col gap-4 animate-fadeIn">
+                    
+                    {/* RINGKASAN COUNTER STATUS HARIAN */}
+                    <div className="bg-white p-4 rounded-3xl border border-emerald-100 shadow-sm">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-3">
+                        📊 Rekapitulasi Presensi & Status
+                      </span>
+                      <div className="grid grid-cols-4 gap-2 text-center">
+                        <div className="bg-emerald-50 border border-emerald-200 p-2 rounded-2xl">
+                          <span className="text-[9px] font-bold text-emerald-700 block uppercase">Hadir</span>
+                          <span className="text-lg font-black text-emerald-800">{statusCounters.hadir}</span>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-200 p-2 rounded-2xl">
+                          <span className="text-[9px] font-bold text-amber-700 block uppercase">Izin</span>
+                          <span className="text-lg font-black text-amber-800">{statusCounters.izin}</span>
+                        </div>
+                        <div className="bg-sky-50 border border-sky-200 p-2 rounded-2xl">
+                          <span className="text-[9px] font-bold text-sky-700 block uppercase">Ujian</span>
+                          <span className="text-lg font-black text-sky-800">{statusCounters.persiapan_ujian}</span>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-200 p-2 rounded-2xl">
+                          <span className="text-[9px] font-bold text-rose-700 block uppercase">Remedial</span>
+                          <span className="text-lg font-black text-rose-800">{statusCounters.remed_ujian}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION 1: RAPORT SANTRI */}
+                    <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
+                        <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                          📜 Nilai Raport Santri
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setShowRaportModal(true)}
+                          className="text-[10px] bg-emerald-600 text-white font-bold px-3 py-1 rounded-xl uppercase hover:bg-emerald-500 transition"
+                        >
+                          + Input Raport
+                        </button>
+                      </div>
+
+                      {raportList.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-4">Belum ada data nilai raport.</p>
+                      ) : (
+                        raportList.map((rap: any, i: number) => (
+                          <div key={i} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 mb-2.5 last:mb-0">
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className="text-xs font-bold text-slate-800">Semester: {rap.semester}</span>
+                              <span className="text-xs font-black text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md">
+                                Nilai Akhir: {rap.nilai_akhir}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 mb-1.5">
+                              <span>Harian: <b className="text-slate-700">{rap.nilai_harian}</b></span>
+                              <span>Bulanan: <b className="text-slate-700">{rap.nilai_bulanan}</b></span>
+                            </div>
+                            {rap.catatan_musyrif && (
+                              <p className="text-[10px] text-slate-600 italic bg-white p-2 rounded-lg border border-slate-200">
+                                "{rap.catatan_musyrif}"
+                              </p>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* SECTION 2: LOG AKTIVITAS */}
+                    <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
+                      <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider border-b border-slate-100 pb-3 mb-3">
+                        ⏱️ Log Histori Status
+                      </h3>
+
+                      {statusLogs.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-4">Belum ada riwayat aktivitas.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2.5">
+                          {statusLogs.map((log: any, i: number) => (
+                            <div key={i} className="flex gap-3 text-xs border-b border-slate-100 pb-2 last:border-0 items-start">
+                              <span className="text-[9px] font-mono text-slate-400 min-w-[65px] pt-0.5">
+                                {log.waktu?.split(',')[0] || '-'}
+                              </span>
+                              <div>
+                                <span className="font-bold text-slate-700 uppercase text-[10px]">
+                                  {log.status}
+                                </span>
+                                <p className="text-[11px] text-slate-500">{log.keterangan || '-'}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* STEP 4: FORM INPUT SETORAN */}
+        {currentStep === 'input_form' && selectedSantri && (
+          <div className="flex flex-col gap-4 animate-fadeIn w-full pb-8">
+            <div className="bg-white border border-emerald-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+              <div>
+                <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Penyetor</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-black text-slate-800">{selectedSantri.nama_santri || selectedSantri.nama}</p>
+                  {renderStatusBadge(selectedSantri.status_santri)}
+                </div>
+              </div>
+              <button
+                onClick={() => setCurrentStep('select_student')}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase transition"
+              >
+                Batal
+              </button>
+            </div>
+
+            {selectedSantri.status_santri && selectedSantri.status_santri !== 'hadir' && (
+              <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl text-xs text-rose-800">
+                <p className="font-bold mb-1 text-rose-900">🛑 Peringatan Proteksi Backend</p>
+                <p className="mb-2 text-[11px]">Santri ini berstatus "{selectedSantri.status_santri}". Setoran ditolak oleh backend sampai status diubah ke HADIR.</p>
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => handleUpdateStatus('hadir')}
+                  className="bg-rose-600 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] uppercase hover:bg-rose-500 transition"
+                >
+                  {actionLoading ? 'Memproses...' : 'Ubah Ke Status HADIR'}
+                </button>
+              </div>
+            )}
+
+            <div className="bg-white border border-emerald-100 p-5 rounded-3xl shadow-sm">
+              <form onSubmit={handleVerifySetoran} className="flex flex-col gap-3.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                      Surah / Juz
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Al-Mulk / Juz 30"
+                      value={surah}
+                      onChange={(e) => setSurah(e.target.value)}
+                      className="w-full bg-slate-50 text-slate-800 border border-slate-300 rounded-xl p-2.5 text-xs focus:border-emerald-500 outline-none font-medium"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                      Ayat / Kaca
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="1-15 / Kaca 3"
+                      value={ayat}
+                      onChange={(e) => setAyat(e.target.value)}
+                      className="w-full bg-slate-50 text-slate-800 border border-slate-300 rounded-xl p-2.5 text-xs focus:border-emerald-500 outline-none font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                    Kelancaran
+                  </label>
+                  <select
+                    value={statusSetoran}
+                    onChange={(e) => setStatusSetoran(e.target.value)}
+                    className="w-full bg-slate-50 text-slate-800 border border-slate-300 rounded-xl p-2.5 text-xs focus:border-emerald-500 outline-none font-medium"
+                  >
+                    <option value="Lancar">🟢 Lancar (Mumtaz)</option>
+                    <option value="Cukup Lancar">🟡 Cukup Lancar (Jayyid)</option>
+                    <option value="Kurang Lancar">🟠 Kurang Lancar (Dhoif)</option>
+                    <option value="Mengulang">🔴 Mengulang</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                    Catatan Koreksi Tajwid/Makhraj
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Qalqalah kurang tahan"
+                    value={catatanKoreksi}
+                    onChange={(e) => setCatatanKoreksi(e.target.value)}
+                    className="w-full bg-slate-50 text-slate-800 border border-slate-300 rounded-xl p-2.5 text-xs outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-700 uppercase">Ada Teguran Santri?</span>
+                    <input
+                      type="checkbox"
+                      checked={adaTeguran}
+                      onChange={(e) => setAdaTeguran(e.target.checked)}
+                      className="w-4 h-4 accent-emerald-600 cursor-pointer"
+                    />
+                  </div>
+
+                  {adaTeguran && (
+                    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-slate-200 animate-fadeIn">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                        Catatan Teguran Adab / Kedisiplinan
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Kurang fokus / mengobrol"
+                        value={catatanTeguran}
+                        onChange={(e) => setCatatanTeguran(e.target.value)}
+                        className="w-full bg-white text-slate-800 border border-slate-300 rounded-xl p-2 text-xs outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                    Catatan Sesi Musyrif
+                  </label>
+                  <div className="relative">
+                    <textarea
+                      rows={3}
+                      value={catatanMusyrif}
+                      onChange={(e) => setCatatanMusyrif(e.target.value)}
+                      placeholder="Transkrip instruksi atau catatan musyrif..."
+                      className="w-full bg-slate-50 text-slate-800 border border-slate-300 rounded-xl p-2.5 pr-10 text-xs outline-none resize-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={startListening}
+                      className="absolute right-2 bottom-2 p-1.5 rounded-lg bg-slate-200 border border-slate-300 text-emerald-700 hover:text-emerald-800"
+                    >
+                      🎙️
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={inputLoading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 rounded-xl text-[11px] uppercase tracking-widest transition disabled:opacity-50 shadow-md"
+                >
+                  {inputLoading ? 'MEMPROSES & MENYIMPAN...' : '✓ SIMPAN SETORAN'}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
       </div>
-    )}
-  </div>
+
+      {/* MODAL 1: EDIT STATUS & TARGET HARIAN */}
+      {showStatusModal && selectedSantri && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-emerald-100 animate-fadeIn">
+            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold uppercase text-slate-800">⚙️ Pengaturan Status & Target</h3>
+              <button onClick={() => setShowStatusModal(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] font-bold uppercase text-slate-500">Status Santri</label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold text-slate-800 outline-none focus:border-emerald-500"
+                >
+                  <option value="hadir">🟢 HADIR</option>
+                  <option value="izin">🟡 IZIN / SAKIT</option>
+                  <option value="persiapan_ujian">🔵 PERSIAPAN UJIAN</option>
+                  <option value="remed_ujian">🔴 REMEDIAL UJIAN</option>
+                </select>
+              </div>
+
+              {editStatus === 'izin' && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[9px] font-bold uppercase text-slate-500">Keterangan Izin</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Sakit demam / Acara keluarga"
+                    value={editKeterangan}
+                    onChange={(e) => setEditKeterangan(e.target.value)}
+                    className="bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-emerald-500"
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => handleUpdateStatus(editStatus, editKeterangan)}
+                className="w-full bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider hover:bg-slate-700 transition"
+              >
+                Simpan Perubahan Status
+              </button>
+
+              <hr className="my-1 border-slate-100" />
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[9px] font-bold uppercase text-slate-500">Target Harian</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Contoh: 1 Kaca / Hari"
+                    value={editTargetHarian}
+                    onChange={(e) => setEditTargetHarian(e.target.value)}
+                    className="flex-1 bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleSaveTargetHarian}
+                    className="bg-emerald-600 text-white font-bold px-3 py-2.5 rounded-xl text-xs uppercase hover:bg-emerald-500 transition"
+                  >
+                    Set
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
-      </div>
+
+      {/* MODAL 2: KELOLA UJIAN SANTRI */}
+      {showUjianModal && selectedSantri && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-sky-100 animate-fadeIn">
+            <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold uppercase text-slate-800">📝 Kelola Ujian Santri</h3>
+              <button onClick={() => setShowUjianModal(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {/* Form 1: Pendaftaran Ujian */}
+              <form onSubmit={handleDaftarUjian} className="flex flex-col gap-2.5 bg-sky-50 p-3 rounded-2xl border border-sky-200">
+                <span className="text-[10px] font-bold text-sky-800 uppercase">1. Daftarkan Ujian Baru</span>
+                <input
+                  type="date"
+                  value={tanggalUjian}
+                  onChange={(e) => setTanggalUjian(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none focus:border-sky-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Catatan persiapan ujian..."
+                  value={catatanPersiapan}
+                  onChange={(e) => setCatatanPersiapan(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none focus:border-sky-500"
+                />
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="bg-sky-600 text-white font-bold py-2 rounded-xl text-xs uppercase hover:bg-sky-500 transition"
+                >
+                  Daftarkan Ujian
+                </button>
+              </form>
+
+              {/* Form 2: Submit Hasil Ujian */}
+              <form onSubmit={handleSubmitHasilUjian} className="flex flex-col gap-2.5 bg-emerald-50 p-3 rounded-2xl border border-emerald-200">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase">2. Input Hasil Ujian</span>
+                <select
+                  value={hasilUjian}
+                  onChange={(e: any) => setHasilUjian(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-xl p-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-500"
+                >
+                  <option value="lulus">🟢 LULUS</option>
+                  <option value="remed">🔴 REMEDIAL</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Catatan penguji/musyrif..."
+                  value={catatanHasilUjian}
+                  onChange={(e) => setCatatanHasilUjian(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs uppercase hover:bg-emerald-500 transition"
+                >
+                  Simpan Hasil Ujian
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: INPUT RAPORT SANTRI */}
+      {showRaportModal && selectedSantri && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-emerald-100 animate-fadeIn">
+            <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold uppercase text-slate-800">📜 Input Nilai Raport</h3>
+              <button onClick={() => setShowRaportModal(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitRaport} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] font-bold uppercase text-slate-500">Semester</label>
+                <input
+                  type="text"
+                  value={semesterRaport}
+                  onChange={(e) => setSemesterRaport(e.target.value)}
+                  className="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none font-bold focus:border-emerald-500"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] font-bold uppercase text-slate-500">Nilai Harian</label>
+                  <input
+                    type="number"
+                    value={nilaiHarian}
+                    onChange={(e) => setNilaiHarian(Number(e.target.value))}
+                    className="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] font-bold uppercase text-slate-500">Nilai Bulanan</label>
+                  <input
+                    type="number"
+                    value={nilaiBulanan}
+                    onChange={(e) => setNilaiBulanan(Number(e.target.value))}
+                    className="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] font-bold uppercase text-slate-500">Nilai Akhir</label>
+                  <input
+                    type="number"
+                    value={nilaiAkhir}
+                    onChange={(e) => setNilaiAkhir(Number(e.target.value))}
+                    className="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none font-bold focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] font-bold uppercase text-slate-500">Catatan Musyrif</label>
+                <textarea
+                  rows={2}
+                  value={catatanRaport}
+                  onChange={(e) => setCatatanRaport(e.target.value)}
+                  placeholder="Catatan perkembangan..."
+                  className="bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs text-slate-800 outline-none resize-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="w-full bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs uppercase hover:bg-emerald-500 transition shadow-md mt-2"
+              >
+                Simpan Nilai Raport
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

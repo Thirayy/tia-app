@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://10.70.70.33:8000/';
+// ✅ Pastikan TANPA slash di akhir
+const BACKEND_URL = (process.env.BACKEND_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 const nextConfig: NextConfig = {
   assetPrefix: '/',
