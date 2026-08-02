@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import api from '@/lib/axiosInstance';
 import { ensureArray } from '@/lib/api';
@@ -98,7 +99,7 @@ export default function ComprehensiveAdminPortal() {
     setPopup({ isOpen: true, title, message, type });
   };
 
-  // State Input & UI lainnya
+  // State Input & UI
   const [changedPlotting, setChangedPlotting] = useState<{ [santriId: number]: string | number | null }>({});
   const [newSantri, setNewSantri] = useState({ nama_santri: '', nomor_induk: '', kelompok_id: '' });
   const [showAddSantri, setShowAddSantri] = useState(false);
@@ -166,7 +167,7 @@ export default function ComprehensiveAdminPortal() {
   };
 
   // ==========================================
-  // HANDLERS (Fungsi Tombol / Form)
+  // HANDLERS (Fungsi Aksi & Backend Calls)
   // ==========================================
   const handleSavePlotting = async () => {
     if (Object.keys(changedPlotting).length === 0) {
@@ -183,22 +184,22 @@ export default function ComprehensiveAdminPortal() {
       setChangedPlotting({});
       await reloadSantriData();
     } catch (err: any) { 
-      showNotification("Gagal", "Gagal menyimpan formasi plotting baru.", "error"); 
+      showNotification("Gagal", err.response?.data?.detail || "Gagal menyimpan formasi plotting baru.", "error"); 
     }
   };
 
   const handleDeleteSantri = async (id: number, nama: string) => {
-    if (!window.confirm(`⚠️ Hapus data santri "${nama}"?`)) return;
+    if (!window.confirm(`⚠️ Yakin hapus data santri "${nama}"?\nSemua histori setorannya juga akan ikut terhapus!`)) return;
     try {
       const res = await api.delete(`/admin/santri/${id}`);
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Terhapus", `Data santri ${nama} berhasil dihapus.`, "success");
+        showNotification("Terhapus", res.data?.message || `Data santri ${nama} berhasil dihapus.`, "success");
         setSantriList((prev) => ensureArray<any>(prev).filter((s) => s.id !== id));
         await reloadSantriData();
         await reloadOverview();
       }
-    } catch (err) {
-      showNotification("Gagal", "Gagal menghapus santri.", "error");
+    } catch (err: any) {
+      showNotification("Gagal", err.response?.data?.detail || "Gagal menghapus santri.", "error");
     }
   };
 
@@ -212,7 +213,7 @@ export default function ComprehensiveAdminPortal() {
       const res = await api.post('/admin/santri', payload);
 
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Berhasil", "Santri baru berhasil ditambahkan!", "success");
+        showNotification("Berhasil", res.data?.message || "Santri baru berhasil ditambahkan!", "success");
         setNewSantri({ nama_santri: '', nomor_induk: '', kelompok_id: '' });
         setShowAddSantri(false);
         await reloadSantriData();
@@ -230,13 +231,13 @@ export default function ComprehensiveAdminPortal() {
         target_semester: targetSemesterInput
       });
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Target Tersimpan", "Target semester berhasil diset!", "success");
+        showNotification("Target Tersimpan", res.data?.message || "Target semester berhasil diset!", "success");
         setSelectedTargetSantri(null);
         setTargetSemesterInput('');
         await reloadSantriData();
       }
     } catch (err: any) {
-      showNotification("Gagal", "Gagal menyimpan target semester.", "error");
+      showNotification("Gagal", err.response?.data?.detail || "Gagal menyimpan target semester.", "error");
     }
   };
 
@@ -245,7 +246,7 @@ export default function ComprehensiveAdminPortal() {
     try {
       const res = await api.post('/admin/musyrif', newMusyrif);
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Sukses", "Musyrif baru berhasil terdaftar!", "success");
+        showNotification("Sukses", res.data?.message || "Musyrif baru berhasil terdaftar!", "success");
         setNewMusyrif({ nama_lengkap: '', username: '', password: '' });
         setShowAddMusyrif(false);
         await reloadMusyrifData();
@@ -257,11 +258,11 @@ export default function ComprehensiveAdminPortal() {
   };
 
   const handleDeleteMusyrif = async (id: number, nama: string) => {
-    if (!window.confirm(`⚠️ YAKIN MAU HAPUS MUSYRIF: "${nama}"?\nAksi ini akan berdampak pada kelompok binaannya!`)) return;
+    if (!window.confirm(`⚠️ YAKIN MAU HAPUS MUSYRIF: "${nama}"?\nAksi ini akan memutus hubungan kelompok binaannya!`)) return;
     try {
       const res = await api.delete(`/admin/musyrif/${id}`);
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Terhapus", "Data Musyrif berhasil dihapus!", "success");
+        showNotification("Terhapus", res.data?.message || "Data Musyrif berhasil dihapus!", "success");
         await reloadMusyrifData();
         await reloadKelompokData();
         await reloadMonitorHalaqah();
@@ -277,7 +278,7 @@ export default function ComprehensiveAdminPortal() {
     try {
       const res = await api.put(`/admin/musyrif/${id}`, { role: newRole });
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Hak Akses Diperbarui", `Role ${currentNama} diubah menjadi ${newRole.toUpperCase()}`, "success");
+        showNotification("Hak Akses Diperbarui", res.data?.message || `Role ${currentNama} diubah menjadi ${newRole.toUpperCase()}`, "success");
         await reloadMusyrifData();
       }
     } catch (err: any) {
@@ -290,9 +291,9 @@ export default function ComprehensiveAdminPortal() {
     try {
       const res = await api.get(`/admin/musyrif/${userId}/profile`);
       setSelectedMusyrifProfile(res.data);
-    } catch (err) {
-      showNotification("Gagal", "Gagal memuat profil musyrif.", "error");
-    }   finally {
+    } catch (err: any) {
+      showNotification("Gagal", err.response?.data?.detail || "Gagal memuat profil musyrif.", "error");
+    } finally {
       setLoadingProfile(false);
     }
   };
@@ -305,7 +306,7 @@ export default function ComprehensiveAdminPortal() {
         musyrif_id: parseInt(newKelompok.musyrif_id),
       });
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Kelompok Terbentuk", "Kelompok halaqah baru berhasil dibuat!", "success");
+        showNotification("Kelompok Terbentuk", res.data?.message || "Kelompok halaqah baru berhasil dibuat!", "success");
         setNewKelompok({ nama_kelompok: '', musyrif_id: '' });
         setShowAddKelompok(false);
         await reloadKelompokData();
@@ -316,20 +317,35 @@ export default function ComprehensiveAdminPortal() {
     }
   };
 
+  const handleDeleteKelompok = async (kelompokId: number, namaKelompok: string) => {
+    if (!window.confirm(`⚠️ YAKIN INGIN MENGHAPUS KELOMPOK "${namaKelompok}"?\nSantri di kelompok ini akan dialihkan menjadi 'Tanpa Kelompok' (tidak terhapus).`)) return;
+    try {
+      const res = await api.delete(`/admin/kelompok/${kelompokId}`);
+      if (res.status === 200 || res.data?.status === 'success') {
+        showNotification("Terhapus", res.data?.message || `Kelompok '${namaKelompok}' berhasil dihapus.`, "success");
+        await reloadKelompokData();
+        await reloadSantriData();
+        await reloadMonitorHalaqah();
+        await reloadOverview();
+      }
+    } catch (err: any) {
+      showNotification("Gagal Hapus Kelompok", err.response?.data?.detail || "Gagal menghapus kelompok halaqah.", "error");
+    }
+  };
+
   const handleSubmitDisrupsi = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const isLibur = disrupsiForm.status_halaqah === 'diliburkan_total';
       const payload = { 
         ...disrupsiForm, 
-        // Jika libur total, kirim kelompok_id & badal_musyrif_id sebagai null
         kelompok_id: isLibur ? null : (disrupsiForm.kelompok_id ? parseInt(disrupsiForm.kelompok_id) : null), 
         badal_musyrif_id: isLibur ? null : (disrupsiForm.badal_musyrif_id ? parseInt(disrupsiForm.badal_musyrif_id) : null)
       };
       
       const res = await api.post('/admin/halaqah/disrupsi', payload);
       if (res.status === 200 || res.data?.status === 'success') {
-        showNotification("Berhasil!", isLibur ? "Semua halaqah telah berhasil diliburkan!" : "Status disrupsi badal telah diaktifkan.", "success");
+        showNotification("Berhasil!", res.data?.message || (isLibur ? "Semua halaqah telah berhasil diliburkan!" : "Status disrupsi badal telah diaktifkan."), "success");
         setDisrupsiForm({ kelompok_id: '', badal_musyrif_id: '', alasan: '', status_halaqah: 'diganti_badal' });
         setShowDisrupsiForm(false);
         await reloadMonitorHalaqah();
@@ -342,11 +358,11 @@ export default function ComprehensiveAdminPortal() {
   const handleCancelBadal = async (kelompokId: number) => {
     if (!window.confirm("Yakin ingin membatalkan status disrupsi / libur kelompok ini?")) return;
     try {
-      await api.put(`/admin/halaqah/${kelompokId}/cancel-badal`, {});
-      showNotification("Status Diperbarui", "Status halaqah kembali Normal (Musyrif Asli).", "success");
+      const res = await api.put(`/admin/halaqah/${kelompokId}/cancel-badal`, {});
+      showNotification("Status Diperbarui", res.data?.message || "Status halaqah kembali Normal (Musyrif Asli).", "success");
       await reloadMonitorHalaqah();
-    } catch (err) {
-      showNotification("Gagal", "Gagal membatalkan status disrupsi!", "error");
+    } catch (err: any) {
+      showNotification("Gagal", err.response?.data?.detail || "Gagal membatalkan status disrupsi!", "error");
     }
   };
 
@@ -356,15 +372,16 @@ export default function ComprehensiveAdminPortal() {
     try {
       const res = await api.get(`/admin/halaqah/${kelompokId}/laporan`);
       setHistoryData(ensureArray(res.data, ['laporan', 'data']));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      showNotification("Gagal", err.response?.data?.detail || "Gagal memuat histori laporan kelompok.", "error");
     } finally {
       setLoadingHistory(false);
     }
   };
 
   // ==========================================
-  // INITIAL DATA FETCH & REALTIME POLLING
+  // INITIAL FETCH & REALTIME POLLING
   // ==========================================
   useEffect(() => {
     const session = getSession();
@@ -406,7 +423,7 @@ export default function ComprehensiveAdminPortal() {
 
     fetchAllData();
 
-    // AUTO REALTIME POLLING AGAR TANPA REFRESH
+    // Auto realtime polling
     const interval = setInterval(() => {
       reloadMonitorHalaqah();
       reloadOverview();
@@ -442,7 +459,7 @@ export default function ComprehensiveAdminPortal() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden relative">
-      {/* POPUP NOTIFICATION MODAL */}
+      {/* NOTIFICATION MODAL */}
       <NotificationModal 
         isOpen={popup.isOpen}
         onClose={() => setPopup({ ...popup, isOpen: false })}
@@ -451,11 +468,11 @@ export default function ComprehensiveAdminPortal() {
         type={popup.type}
       />
 
-      {/* SIDEBAR KHUSUS DESKTOP */}
-      <aside className="hidden md:flex w-64 bg-white border-r border-gnome-border p-6 flex-col gap-8 shrink-0">
+      {/* SIDEBAR DESKTOP */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 p-6 flex-col gap-8 shrink-0">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-gnome-green rounded-lg flex items-center justify-center font-black text-xs text-white shadow-lg shadow-emerald-200">A</div>
+            <div className="w-7 h-7 bg-emerald-600 rounded-lg flex items-center justify-center font-black text-xs text-white shadow-lg shadow-emerald-200">A</div>
             <h1 className="text-sm font-bold tracking-tight text-slate-800 uppercase">Admin Portal</h1>
           </div>
           <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase pl-10 block">TIA Management</span>
@@ -468,7 +485,7 @@ export default function ComprehensiveAdminPortal() {
               key={tab} 
               onClick={() => setActiveTab(tab)} 
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
-                activeTab === tab ? 'bg-gnome-green text-white shadow-lg shadow-emerald-200' : 'text-slate-600 hover:bg-slate-100'
+                activeTab === tab ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
               {tab === 'overview' ? '📊 Overview' : 
@@ -481,7 +498,7 @@ export default function ComprehensiveAdminPortal() {
 
         <div className="pt-4 border-t border-slate-100 flex flex-col gap-3">
           <div className="text-[11px] font-bold text-slate-500 px-2 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-gnome-green animate-pulse"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
             User: {adminName}
           </div>
           <button onClick={() => router.push('/musyrif')} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold uppercase text-slate-600 hover:text-red-500 hover:border-red-200 transition-all">
@@ -491,10 +508,10 @@ export default function ComprehensiveAdminPortal() {
       </aside>
 
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
-        {/* TOP HEADER KHUSUS MOBILE */}
-        <div className="md:hidden bg-white p-4 border-b border-gnome-border flex items-center justify-between sticky top-0 z-30 shrink-0">
+        {/* TOP HEADER MOBILE */}
+        <div className="md:hidden bg-white p-4 border-b border-slate-200 flex items-center justify-between sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-gnome-green rounded-lg flex items-center justify-center font-black text-xs text-white shadow-lg shadow-emerald-200">A</div>
+            <div className="w-7 h-7 bg-emerald-600 rounded-lg flex items-center justify-center font-black text-xs text-white shadow-lg shadow-emerald-200">A</div>
             <h2 className="text-sm font-bold tracking-tight text-slate-800 uppercase">TIA Admin Portal</h2>
           </div>
           <button onClick={() => router.push('/musyrif')} className="text-[10px] px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 font-bold uppercase text-slate-600">
@@ -506,7 +523,7 @@ export default function ComprehensiveAdminPortal() {
         <div className="flex-1 overflow-y-auto p-4 md:p-8 w-full pb-24 md:pb-8">
           <div className="max-w-6xl mx-auto w-full flex flex-col gap-4">
 
-            {/* HIGH PRIORITY WARNING BANNER HALAQAH DISRUPSI/BADAL/LIBUR */}
+            {/* WARNING BANNER HALAQAH DISRUPSI/BADAL/LIBUR */}
             {halaqahBermasalahList.length > 0 && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div className="flex items-center gap-3">
@@ -548,7 +565,7 @@ export default function ComprehensiveAdminPortal() {
                     { label: 'Total Laporan', val: overviewData.total_laporan },
                     { label: 'Santri Aktif', val: overviewData.santri_aktif },
                   ].map((stat, i) => (
-                    <div key={i} className="bg-white border border-gnome-border p-5 rounded-xl shadow-sm">
+                    <div key={i} className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">{stat.label}</span>
                       <p className="text-2xl font-black text-slate-800">{stat.val}</p>
                     </div>
@@ -556,13 +573,13 @@ export default function ComprehensiveAdminPortal() {
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                  <div className="bg-white border border-gnome-border p-5 rounded-xl xl:col-span-2 shadow-sm">
+                  <div className="bg-white border border-slate-200 p-5 rounded-xl xl:col-span-2 shadow-sm">
                     <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-6">Aktivitas & Log Laporan Global</h3>
                     
                     <div className="h-56 flex flex-col justify-between bg-slate-50 rounded-xl border border-slate-200 p-4 relative overflow-hidden">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-xs font-bold text-slate-700">Statistik Tren Laporan</span>
-                        <span className="text-[10px] bg-emerald-50 text-gnome-green font-bold px-2 py-0.5 rounded-full border border-emerald-100">Live Line</span>
+                        <span className="text-[10px] bg-emerald-50 text-emerald-600 font-bold px-2 py-0.5 rounded-full border border-emerald-100">Live Line</span>
                       </div>
                       
                       <div className="relative w-full h-32 flex items-end">
@@ -585,16 +602,15 @@ export default function ComprehensiveAdminPortal() {
                         <span>Pekan Ini ({overviewData.total_laporan} Laporan)</span>
                       </div>
                     </div>
-
                   </div>
 
-                  <div className="bg-white border border-gnome-border p-5 rounded-xl shadow-sm">
+                  <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
                     <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-4">Cakupan Setoran Santri</h3>
                     <div className="flex flex-col gap-2">
                       {safeSantriList.slice(0, 5).map((s, idx) => (
                         <div key={idx} className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
                           <span className="text-slate-700 font-bold truncate pr-2">{s.nama_santri}</span>
-                          <span className="font-bold text-gnome-green shrink-0">{s.total_setoran || 0} setoran</span>
+                          <span className="font-bold text-emerald-600 shrink-0">{s.total_setoran || 0} setoran</span>
                         </div>
                       ))}
                     </div>
@@ -613,7 +629,7 @@ export default function ComprehensiveAdminPortal() {
                   </div>
                   <button 
                     onClick={() => setShowAddSantri(!showAddSantri)} 
-                    className="bg-gnome-green hover:bg-emerald-600 px-4 py-2.5 rounded-xl text-xs text-white font-bold uppercase"
+                    className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2.5 rounded-xl text-xs text-white font-bold uppercase"
                   >
                     {showAddSantri ? 'Batal' : '+ Tambah Santri'}
                   </button>
@@ -671,7 +687,7 @@ export default function ComprehensiveAdminPortal() {
                   {filteredSantri.map((s) => (
                     <div key={s.id} className="bg-white border border-slate-200 p-4 rounded-xl flex justify-between items-center shadow-sm gap-3">
                       <div className="flex items-center gap-4 min-w-0 flex-1">
-                        <div className="w-11 h-11 rounded-full bg-emerald-100 flex items-center justify-center font-black text-gnome-green text-xs shrink-0">
+                        <div className="w-11 h-11 rounded-full bg-emerald-100 flex items-center justify-center font-black text-emerald-600 text-xs shrink-0">
                           {s.nama_santri?.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0 flex-1">
@@ -705,7 +721,7 @@ export default function ComprehensiveAdminPortal() {
                   </div>
                   <button
                     onClick={() => setShowAddMusyrif(!showAddMusyrif)}
-                    className="bg-gnome-green hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide transition shadow-md w-full sm:w-auto text-center"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide transition shadow-md w-full sm:w-auto text-center"
                   >
                     {showAddMusyrif ? 'Batal' : '+ Tambah Pengguna'}
                   </button>
@@ -725,20 +741,20 @@ export default function ComprehensiveAdminPortal() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <label className="relative min-w-0">
                           <span className="text-[10px] text-slate-400 font-semibold mb-1 block">Nama Lengkap</span>
-                          <input type="text" className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs w-full focus:border-gnome-green outline-none" value={newMusyrif.nama_lengkap} onChange={e => setNewMusyrif({ ...newMusyrif, nama_lengkap: e.target.value })} required />
+                          <input type="text" className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs w-full focus:border-emerald-600 outline-none" value={newMusyrif.nama_lengkap} onChange={e => setNewMusyrif({ ...newMusyrif, nama_lengkap: e.target.value })} required />
                         </label>
                         <label className="relative min-w-0">
                           <span className="text-[10px] text-slate-400 font-semibold mb-1 block">Username</span>
-                          <input type="text" className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs w-full focus:border-gnome-green outline-none" value={newMusyrif.username} onChange={e => setNewMusyrif({ ...newMusyrif, username: e.target.value.replace(/\s+/g, '').toLowerCase() })} required />
+                          <input type="text" className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs w-full focus:border-emerald-600 outline-none" value={newMusyrif.username} onChange={e => setNewMusyrif({ ...newMusyrif, username: e.target.value.replace(/\s+/g, '').toLowerCase() })} required />
                         </label>
                         <label className="relative min-w-0">
                           <span className="text-[10px] text-slate-400 font-semibold mb-1 block">Password</span>
-                          <input type="password" className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs w-full focus:border-gnome-green outline-none" value={newMusyrif.password} onChange={e => setNewMusyrif({ ...newMusyrif, password: e.target.value })} required />
+                          <input type="password" className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs w-full focus:border-emerald-600 outline-none" value={newMusyrif.password} onChange={e => setNewMusyrif({ ...newMusyrif, password: e.target.value })} required />
                         </label>
                       </div>
                       <div className="flex justify-end gap-3 pt-2">
                         <button type="button" onClick={() => setShowAddMusyrif(false)} className="px-4 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">Batal</button>
-                        <button type="submit" className="px-4 py-2 rounded-xl text-xs font-bold bg-gnome-green hover:bg-emerald-600 text-white">Simpan Data</button>
+                        <button type="submit" className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white">Simpan Data</button>
                       </div>
                     </form>
                   </Modal>
@@ -749,7 +765,7 @@ export default function ComprehensiveAdminPortal() {
                   placeholder="Cari musyrif..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-800 w-full outline-none focus:ring-2 focus:ring-gnome-green/20"
+                  className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-800 w-full outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
 
                 {filteredUstadz.length === 0 ? (
@@ -757,9 +773,9 @@ export default function ComprehensiveAdminPortal() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {filteredUstadz.map((u) => (
-                      <div key={u.id} className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3 shadow-sm hover:border-gnome-green transition-all">
+                      <div key={u.id} className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3 shadow-sm hover:border-emerald-500 transition-all">
                         <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onClick={() => handleOpenMusyrifProfile(u.id)}>
-                          <div className="w-10 h-10 bg-emerald-50 text-gnome-green rounded-xl flex items-center justify-center font-black text-xs uppercase shrink-0">{u.nama_lengkap?.charAt(0) || 'M'}</div>
+                          <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-black text-xs uppercase shrink-0">{u.nama_lengkap?.charAt(0) || 'M'}</div>
                           <div className="min-w-0 flex-1 pr-2">
                             <h4 className="text-xs font-bold text-slate-800 truncate hover:underline">{u.nama_lengkap}</h4>
                             <p className="text-[10px] text-slate-400 font-mono truncate">@{u.username} | <span className="uppercase text-emerald-600 font-bold">{u.role}</span></p>
@@ -790,7 +806,7 @@ export default function ComprehensiveAdminPortal() {
                   </div>
                   <button
                     onClick={handleSavePlotting}
-                    className="bg-gnome-green hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase transition shadow-md w-full sm:w-auto text-center"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase transition shadow-md w-full sm:w-auto text-center"
                   >
                     💾 Simpan Formasi {Object.keys(changedPlotting).length > 0 ? `(${Object.keys(changedPlotting).length})` : ''}
                   </button>
@@ -817,7 +833,7 @@ export default function ComprehensiveAdminPortal() {
                               const val = e.target.value;
                               setChangedPlotting(prev => ({ ...prev, [s.id]: val === "" ? null : parseInt(val) }));
                             }}
-                            className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 w-full focus:outline-none focus:border-gnome-green cursor-pointer"
+                            className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-700 w-full focus:outline-none focus:border-emerald-600 cursor-pointer"
                           >
                             <option value="" className="text-slate-400">-- Pilih Kelompok Halaqah --</option>
                             {safeKelompokList.map((k) => (
@@ -851,7 +867,7 @@ export default function ComprehensiveAdminPortal() {
                     </button>
                     <button 
                       onClick={() => { setShowDisrupsiForm(!showDisrupsiForm); setShowAddKelompok(false); }} 
-                      className="bg-gnome-green hover:bg-emerald-600 border border-emerald-500 px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition text-white shadow-md w-full sm:w-auto text-center"
+                      className="bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 px-4 py-2.5 rounded-xl text-xs font-bold uppercase transition text-white shadow-md w-full sm:w-auto text-center"
                     >
                       {showDisrupsiForm ? 'Batal' : '⚡ Catat Disrupsi/Libur'}
                     </button>
@@ -862,14 +878,14 @@ export default function ComprehensiveAdminPortal() {
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm mb-2">
                     <h3 className="text-sm font-bold text-slate-700 mb-4">➕ Bikin Kelompok Baru</h3>
                     <form onSubmit={handleAddKelompok} className="flex flex-col sm:flex-row gap-3">
-                      <input placeholder="Nama Kelompok" className="bg-white border border-slate-200 p-3 rounded-lg text-xs w-full focus:outline-none focus:border-gnome-green" value={newKelompok.nama_kelompok} onChange={e => setNewKelompok({ ...newKelompok, nama_kelompok: e.target.value })} required />
-                      <select className="bg-white border border-slate-200 p-3 rounded-lg text-xs w-full focus:outline-none focus:border-gnome-green" value={newKelompok.musyrif_id} onChange={e => setNewKelompok({ ...newKelompok, musyrif_id: e.target.value })} required >
+                      <input placeholder="Nama Kelompok" className="bg-white border border-slate-200 p-3 rounded-lg text-xs w-full focus:outline-none focus:border-emerald-600" value={newKelompok.nama_kelompok} onChange={e => setNewKelompok({ ...newKelompok, nama_kelompok: e.target.value })} required />
+                      <select className="bg-white border border-slate-200 p-3 rounded-lg text-xs w-full focus:outline-none focus:border-emerald-600" value={newKelompok.musyrif_id} onChange={e => setNewKelompok({ ...newKelompok, musyrif_id: e.target.value })} required >
                         <option value="">-- Tunjuk Musyrif Utama --</option>
                         {safeUstadzList.filter((u) => u.role === 'musyrif').map((u) => (
                           <option key={u.id} value={u.id}>{u.nama_lengkap}</option>
                         ))}
                       </select>
-                      <button type="submit" className="bg-gnome-green hover:bg-emerald-600 px-6 py-3 rounded-lg text-xs font-bold w-full sm:w-48 text-white transition text-center">SIMPAN</button>
+                      <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 px-6 py-3 rounded-lg text-xs font-bold w-full sm:w-48 text-white transition text-center">SIMPAN</button>
                     </form>
                   </div>
                 )}
@@ -878,22 +894,22 @@ export default function ComprehensiveAdminPortal() {
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm mb-2">
                     <h3 className="text-sm font-bold text-emerald-700 mb-4">⚡ Log Disrupsi & Status Libur</h3>
                     <form onSubmit={handleSubmitDisrupsi} className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      {/* 1. Opsi Status (Ganti Badal / Libur Total) */}
+                      {/* Opsi Status */}
                       <select 
                         value={disrupsiForm.status_halaqah} 
                         onChange={(e) => setDisrupsiForm({ ...disrupsiForm, status_halaqah: e.target.value })} 
-                        className="bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-gnome-green w-full"
+                        className="bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-emerald-600 w-full"
                       >
                         <option value="diganti_badal">Ganti dengan Ustadz Badal</option>
                         <option value="diliburkan_total">Diliburkan (Semua Halaqah)</option>
                       </select>
 
-                      {/* 2. Pilih Kelompok (Hanya tampil jika mode Badal) */}
+                      {/* Pilih Kelompok (Mode Badal) */}
                       {disrupsiForm.status_halaqah === 'diganti_badal' && (
                         <select 
                           value={disrupsiForm.kelompok_id} 
                           onChange={(e) => setDisrupsiForm({ ...disrupsiForm, kelompok_id: e.target.value })} 
-                          className="bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-gnome-green w-full" 
+                          className="bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-emerald-600 w-full" 
                           required
                         >
                           <option value="">-- Pilih Kelompok Bermasalah --</option>
@@ -901,30 +917,30 @@ export default function ComprehensiveAdminPortal() {
                         </select>
                       )}
 
-                      {/* 3. Pilih Ustadz Badal (Hanya tampil jika mode Badal) */}
+                      {/* Pilih Ustadz Badal (Mode Badal) */}
                       {disrupsiForm.status_halaqah === 'diganti_badal' && (
                         <select 
                           value={disrupsiForm.badal_musyrif_id} 
                           onChange={(e) => setDisrupsiForm({ ...disrupsiForm, badal_musyrif_id: e.target.value })} 
-                          className="bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-gnome-green w-full"
+                          className="bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-emerald-600 w-full"
                         >
                           <option value="">-- Tunjuk Ustadz Badal --</option>
                           {safeUstadzList.filter((u) => u.role === 'musyrif').map((u) => (<option key={u.id} value={u.id}>{u.nama_lengkap}</option>))}
                         </select>
                       )}
 
-                      {/* 4. Input Alasan (Selalu tampil) */}
+                      {/* Input Alasan */}
                       <input 
                         type="text" 
                         placeholder={disrupsiForm.status_halaqah === 'diliburkan_total' ? "Alasan Libur (cth: Tanggal Merah / Libur Nasional)..." : "Alasan Badal..."} 
                         value={disrupsiForm.alasan} 
                         onChange={(e) => setDisrupsiForm({ ...disrupsiForm, alasan: e.target.value })} 
-                        className={`bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-gnome-green w-full ${disrupsiForm.status_halaqah === 'diliburkan_total' ? 'sm:col-span-1' : 'sm:col-span-2'}`} 
+                        className={`bg-white border border-slate-200 rounded-xl p-3 text-slate-700 focus:outline-none focus:border-emerald-600 w-full ${disrupsiForm.status_halaqah === 'diliburkan_total' ? 'sm:col-span-1' : 'sm:col-span-2'}`} 
                         required 
                       />
 
                       <div className="sm:col-span-2 flex justify-end mt-2">
-                        <button type="submit" className="bg-gnome-green hover:bg-emerald-600 text-white font-bold py-2.5 px-6 rounded-xl transition w-full sm:w-auto text-center">
+                        <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl transition w-full sm:w-auto text-center">
                           Simpan Status {disrupsiForm.status_halaqah === 'diliburkan_total' ? 'Libur' : 'Disrupsi'}
                         </button>
                       </div>
@@ -932,7 +948,7 @@ export default function ComprehensiveAdminPortal() {
                   </div>
                 )}
 
-                {/* GRID MONITORING KELOMPOK HALAQAH */}
+                {/* GRID MONITORING & KELOLA HALAQAH */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {safeMonitorHalaqah.map((h, idx) => (
                     <div 
@@ -945,20 +961,31 @@ export default function ComprehensiveAdminPortal() {
                             : 'border-slate-200'
                       } p-5 rounded-2xl flex flex-col gap-4 shadow-sm h-full`}
                     >
-                      <div className="absolute top-4 right-4 flex gap-1.5">
+                      <div className="absolute top-4 right-4 flex items-center gap-1.5">
                         <span className="bg-slate-100 text-slate-500 text-[9px] px-2 py-1 rounded font-mono">ID:{h.kelompok_id}</span>
+                        
                         {/* BADGE BADAL */}
                         {h.status_halaqah === 'diganti_badal' && (
                           <span className="bg-red-50 text-red-600 border border-red-200 text-[9px] px-2 py-1 rounded font-bold animate-pulse">🔴 BADAL</span>
                         )}
+                        
                         {/* BADGE LIBUR */}
                         {h.status_halaqah === 'diliburkan_total' && (
                           <span className="bg-amber-50 text-amber-600 border border-amber-200 text-[9px] px-2 py-1 rounded font-bold animate-pulse">🏖️ LIBUR</span>
                         )}
+
+                        {/* TOMBOL HAPUS KELOMPOK */}
+                        <button 
+                          onClick={() => handleDeleteKelompok(h.kelompok_id, h.nama_kelompok)}
+                          className="p-1 text-slate-400 hover:text-red-500 rounded transition"
+                          title="Hapus Kelompok Ini"
+                        >
+                          🗑️
+                        </button>
                       </div>
 
                       <div>
-                        <h4 className="text-sm font-bold text-slate-800 mb-2 truncate pr-20">{h.nama_kelompok}</h4>
+                        <h4 className="text-sm font-bold text-slate-800 mb-2 truncate pr-24">{h.nama_kelompok}</h4>
                         <div className="flex flex-col gap-1 text-[11px] text-slate-500">
                           <p className="truncate">👤 Asli: <span className="text-slate-800">{h.musyrif_asli}</span></p>
                           <p className="truncate">🎓 Santri: <span className="text-slate-800">{h.total_santri} anak</span></p>
@@ -997,8 +1024,8 @@ export default function ComprehensiveAdminPortal() {
           </div>
         </div>
 
-        {/* BOTTOM NAVIGATION BAR MOBILE */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gnome-border flex justify-around items-center h-16 px-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {/* BOTTOM NAVIGATION MOBILE */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           {(['overview', 'santri', 'musyrif', 'plotting', 'halaqah'] as const).map((tab) => {
             const isActive = activeTab === tab;
             return (
@@ -1007,7 +1034,7 @@ export default function ComprehensiveAdminPortal() {
                 onClick={() => setActiveTab(tab)} 
                 className={`relative flex flex-col items-center justify-center flex-1 h-[85%] mx-1 rounded-xl transition-all duration-300 active:scale-110 ${
                   isActive 
-                    ? 'text-gnome-green font-bold border-2 border-gnome-green bg-emerald-50 shadow-sm scale-110' 
+                    ? 'text-emerald-600 font-bold border-2 border-emerald-600 bg-emerald-50 shadow-sm scale-110' 
                     : 'text-slate-400 hover:text-slate-600 border-2 border-transparent'
                 }`}
               >
@@ -1040,11 +1067,11 @@ export default function ComprehensiveAdminPortal() {
               placeholder="Contoh: Juz 1 - 3"
               value={targetSemesterInput} 
               onChange={e => setTargetSemesterInput(e.target.value)}
-              className="border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-gnome-green"
+              className="border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-emerald-600"
             />
             <div className="flex justify-end gap-2 mt-2">
               <button onClick={() => setSelectedTargetSantri(null)} className="px-4 py-2 rounded-xl text-xs bg-slate-100 text-slate-600 font-bold">Batal</button>
-              <button onClick={handleSaveTargetSemester} className="px-4 py-2 rounded-xl text-xs bg-gnome-green text-white font-bold">Simpan</button>
+              <button onClick={handleSaveTargetSemester} className="px-4 py-2 rounded-xl text-xs bg-emerald-600 text-white font-bold">Simpan</button>
             </div>
           </div>
         </div>
@@ -1095,7 +1122,7 @@ export default function ComprehensiveAdminPortal() {
         </div>
       )}
 
-      {/* MODAL HISTORI LAPORAN */}
+      {/* MODAL HISTORI LAPORAN KELOMPOK */}
       {showHistoryModal !== null && !selectedDetailLaporan && !selectedProfilSantri && (
         <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 w-full max-w-4xl h-[85vh] rounded-3xl flex flex-col shadow-2xl overflow-hidden mx-auto">
@@ -1113,13 +1140,13 @@ export default function ComprehensiveAdminPortal() {
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                   <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition" onClick={() => setExpandedMusyrif(!expandedMusyrif)}>
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-lg font-black text-gnome-green">
-                        {safeHistoryData[0]?.nama_musyrif ? safeHistoryData[0].nama_musyrif.charAt(0).toUpperCase() : 'M'}
+                      <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-lg font-black text-emerald-600">
+                        📖
                       </div>
                       <div>
                         <h4 className="text-slate-800 font-bold text-sm">Histori Setoran Halaqah</h4>
                         <div className="flex gap-2 mt-1.5">
-                          <span className="text-[10px] bg-emerald-50 text-gnome-green px-2 py-0.5 rounded-full font-bold">📖 {safeHistoryData.length} Laporan</span>
+                          <span className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold">📖 {safeHistoryData.length} Laporan</span>
                         </div>
                       </div>
                     </div>
@@ -1129,13 +1156,13 @@ export default function ComprehensiveAdminPortal() {
                     <div className="border-t border-slate-200 p-5 bg-white">
                       <div className="relative pl-6 ml-5 border-l border-slate-200 space-y-5">
                         {safeHistoryData.map((report, idx) => (
-                          <div key={idx} className="relative bg-white border border-slate-200 rounded-xl p-4 hover:border-gnome-green transition-all group">
-                            <div className="absolute -left-[30px] top-5 w-3 h-3 bg-gnome-green rounded-full ring-4 ring-white"></div>
+                          <div key={idx} className="relative bg-white border border-slate-200 rounded-xl p-4 hover:border-emerald-500 transition-all group">
+                            <div className="absolute -left-[30px] top-5 w-3 h-3 bg-emerald-600 rounded-full ring-4 ring-white"></div>
                             <div className="flex justify-between items-center mb-3">
                               <div className="text-[10px] text-slate-400 font-mono">📅 {report.waktu_setoran}</div>
                               <div className="flex gap-2">
-                                <button onClick={() => setSelectedProfilSantri(report)} className="text-[10px] px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-gnome-green">👤 Profil</button>
-                                <button onClick={() => setSelectedDetailLaporan(report)} className="text-[10px] px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-gnome-green">📄 Detail</button>
+                                <button onClick={() => setSelectedProfilSantri(report)} className="text-[10px] px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-emerald-600">👤 Profil</button>
+                                <button onClick={() => setSelectedDetailLaporan(report)} className="text-[10px] px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:text-emerald-600">📄 Detail</button>
                               </div>
                             </div>
                             <p className="text-xs text-slate-600 font-medium">Santri: {report.nama_santri} ({report.surah} : {report.ayat})</p>
@@ -1163,7 +1190,7 @@ export default function ComprehensiveAdminPortal() {
             <div className="p-6 space-y-6">
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 grid grid-cols-2 gap-4 text-xs">
                 <div><span className="block text-slate-400 mb-1">Surah & Ayat</span><span className="text-slate-800 font-mono bg-white px-2 py-1 rounded border border-slate-200">{selectedDetailLaporan.surah} : {selectedDetailLaporan.ayat}</span></div>
-                <div><span className="block text-slate-400 mb-1">Kelancaran</span><span className="text-gnome-green font-bold uppercase">{selectedDetailLaporan.status_kelancaran}</span></div>
+                <div><span className="block text-slate-400 mb-1">Kelancaran</span><span className="text-emerald-600 font-bold uppercase">{selectedDetailLaporan.status_kelancaran}</span></div>
               </div>
               <div>
                 <h4 className="text-xs font-bold text-slate-400 mb-2 uppercase">Hasil Rekomendasi AI</h4>
@@ -1176,19 +1203,19 @@ export default function ComprehensiveAdminPortal() {
         </div>
       )}
 
-      {/* MODAL PROFIL SANTRI */}
+      {/* MODAL PROFIL SANTRI RINGKAS */}
       {selectedProfilSantri && (
         <div className="fixed inset-0 z-[60] bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white border border-slate-200 w-full max-w-sm rounded-3xl flex flex-col p-6 text-center shadow-2xl">
             <h3 className="text-lg font-bold text-slate-800 mb-1">{selectedProfilSantri.nama_santri}</h3>
-            <span className="text-[10px] text-gnome-green font-mono bg-emerald-50 px-3 py-1 rounded-full mb-4 inline-block mx-auto border border-emerald-100">
+            <span className="text-[10px] text-emerald-600 font-mono bg-emerald-50 px-3 py-1 rounded-full mb-4 inline-block mx-auto border border-emerald-100">
               Surah: {selectedProfilSantri.surah} : {selectedProfilSantri.ayat}
             </span>
             
             <div className="text-left bg-slate-50 p-4 rounded-xl text-xs space-y-3 text-slate-600 border border-slate-100">
               <div className="flex justify-between">
                 <span className="text-slate-400">Status Kelancaran:</span>
-                <span className="font-bold text-gnome-green uppercase">{selectedProfilSantri.status_kelancaran}</span>
+                <span className="font-bold text-emerald-600 uppercase">{selectedProfilSantri.status_kelancaran}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Waktu:</span>
