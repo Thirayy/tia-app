@@ -19,10 +19,26 @@ export default function MusyrifPortalMobile() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
 
-  // Tab State untuk Detail Santri
+  // Tab State
   const [activeTab, setActiveTab] = useState<'setoran_daily' | 'profile' | 'raport_log'>('setoran_daily');
 
-  // Helper Tanggal Lokal (Menghindari Bug Timezone UTC)
+  // CUSTOM POPUP NOTIFICATION STATE (Pengganti alert browser)
+  const [popupModal, setPopupModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({ show: false, title: '', message: '', type: 'info' });
+
+  const showPopup = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setPopupModal({ show: true, title, message, type });
+  };
+
+  const closePopup = () => {
+    setPopupModal((prev) => ({ ...prev, show: false }));
+  };
+
+  // Tanggal Lokal Helper
   const getTodayLocalDate = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -31,7 +47,6 @@ export default function MusyrifPortalMobile() {
     return `${year}-${month}-${day}`;
   };
 
-  // Filter Tanggal Setoran
   const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDate());
 
   // Profile Data State
@@ -41,7 +56,7 @@ export default function MusyrifPortalMobile() {
   const [statusLogs, setStatusLogs] = useState<any[]>([]);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  // AI Output States (Terpisah)
+  // AI Output States
   const [overallAnalysis, setOverallAnalysis] = useState('');
   const [dailyAiSummary, setDailyAiSummary] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -52,7 +67,7 @@ export default function MusyrifPortalMobile() {
   >('menu');
   const [portalMode, setPortalMode] = useState<'input' | 'monitor'>('input');
 
-  // Form Modals / Controls State
+  // Form Controls State
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [editStatus, setEditStatus] = useState('hadir');
   const [editKeterangan, setEditKeterangan] = useState('');
@@ -92,7 +107,7 @@ export default function MusyrifPortalMobile() {
   const recognitionRef = useRef<any>(null);
   const accumulatedTextRef = useRef<string>('');
 
-  // Restore LocalStorage (Anti Race-Condition)
+  // Restore LocalStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -105,7 +120,7 @@ export default function MusyrifPortalMobile() {
       }
     } catch (e) {
       console.warn('Gagal memuat state:', e);
-    } finally {
+    } fontinally: {
       setIsStateLoaded(true);
     }
   }, []);
@@ -119,14 +134,12 @@ export default function MusyrifPortalMobile() {
     );
   }, [selectedSantri, currentStep, portalMode, isStateLoaded]);
 
-  // Auto-Fetch Profile jika page direfresh saat di student_detail
   useEffect(() => {
     if (selectedSantri?.id && currentStep === 'student_detail') {
       fetchFullSantriProfile(selectedSantri.id);
     }
   }, [selectedSantri?.id, currentStep]);
 
-  // Cleanup Speech Recognition on Unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
@@ -139,7 +152,6 @@ export default function MusyrifPortalMobile() {
     };
   }, []);
 
- // Fetch Santri List
   const fetchSantriList = async () => {
     setLoading(true);
     setError(null);
@@ -167,7 +179,6 @@ export default function MusyrifPortalMobile() {
     fetchSantriList();
   }, [router]);
 
-  // Fetch Full Santri Profile (Resilien Multi-Key)
   const fetchFullSantriProfile = async (santriId: number | string) => {
     setProfileLoading(true);
     setOverallAnalysis('');
@@ -203,7 +214,6 @@ export default function MusyrifPortalMobile() {
     }
   };
 
-  // Switch Selected Santri
   const handleSelectSantri = (santri: any) => {
     setSelectedSantri(santri);
     setEditStatus(santri.status_santri || 'hadir');
@@ -229,13 +239,12 @@ export default function MusyrifPortalMobile() {
     setCatatanMusyrif('');
   };
 
-  // Voice Parser Realtime
   const startListening = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert('Browser tidak mendukung Speech Recognition. Gunakan Chrome.');
+      showPopup('Browser Tidak Kompatibel', 'Browser Anda tidak mendukung Speech Recognition. Gunakan Google Chrome.', 'error');
       return;
     }
 
@@ -312,11 +321,11 @@ export default function MusyrifPortalMobile() {
       );
       if (fullProfile) setFullProfile((prev: any) => ({ ...prev, status_santri: statusVal }));
 
-      alert(`Status ${selectedSantri.nama_santri || selectedSantri.nama} berhasil diubah menjadi '${statusVal.toUpperCase()}'!`);
+      showPopup('Status Diperbarui', `Status ${selectedSantri.nama_santri || selectedSantri.nama} berhasil diubah menjadi '${statusVal.toUpperCase()}'!`, 'success');
       setShowStatusModal(false);
       fetchFullSantriProfile(selectedSantri.id);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Gagal mengubah status santri');
+      showPopup('Gagal Mengubah Status', err.response?.data?.detail || 'Gagal mengubah status santri', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -330,10 +339,10 @@ export default function MusyrifPortalMobile() {
       await api.put(`/musyrif/santri/${selectedSantri.id}/target-harian`, {
         target_harian: editTargetHarian.trim(),
       });
-      alert('Target Harian Berhasil Disimpan!');
+      showPopup('Target Disimpan', 'Target Harian Berhasil Disimpan!', 'success');
       fetchFullSantriProfile(selectedSantri.id);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Gagal menyimpan target harian');
+      showPopup('Gagal Menyimpan', err.response?.data?.detail || 'Gagal menyimpan target harian', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -349,11 +358,11 @@ export default function MusyrifPortalMobile() {
         tanggal_ujian: tanggalUjian,
         catatan_persiapan: catatanPersiapan || null,
       });
-      alert(`Santri berhasil didaftarkan ujian untuk tanggal ${tanggalUjian}!`);
+      showPopup('Pendaftaran Ujian', `Santri berhasil didaftarkan ujian untuk tanggal ${tanggalUjian}!`, 'success');
       setShowUjianModal(false);
       fetchFullSantriProfile(selectedSantri.id);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Gagal mendaftarkan ujian');
+      showPopup('Gagal Mendaftar Ujian', err.response?.data?.detail || 'Gagal mendaftarkan ujian', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -369,11 +378,11 @@ export default function MusyrifPortalMobile() {
         hasil: hasilUjian,
         catatan: catatanHasilUjian || null,
       });
-      alert(res.data?.detail || 'Hasil Ujian Berhasil Disimpan!');
+      showPopup('Hasil Ujian Disimpan', res.data?.detail || 'Hasil Ujian Berhasil Disimpan!', 'success');
       setShowUjianModal(false);
       fetchFullSantriProfile(selectedSantri.id);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Gagal menyimpan hasil ujian');
+      showPopup('Gagal Menyimpan Hasil Ujian', err.response?.data?.detail || 'Gagal menyimpan hasil ujian', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -383,7 +392,7 @@ export default function MusyrifPortalMobile() {
   const handleVerifySetoran = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!surah.trim() || !ayat.trim()) {
-      alert('Isi nama surah/juz dan ayat/kaca!');
+      showPopup('Input Tidak Lengkap', 'Isi nama surah/juz dan ayat/kaca terlebih dahulu!', 'info');
       return;
     }
 
@@ -407,12 +416,12 @@ export default function MusyrifPortalMobile() {
         catatan_musyrif: catatanMusyrif.trim() || null,
       });
 
-      alert('Setoran Berhasil Disimpan! 🎉');
+      showPopup('Setoran Disimpan', 'Setoran Berhasil Disimpan! 🎉', 'success');
       resetForm();
       fetchFullSantriProfile(santriId);
       setCurrentStep('student_detail');
     } catch (err: any) {
-      alert(`Gagal Simpan Setoran:\n${err.response?.data?.detail || 'Error server'}`);
+      showPopup('Gagal Simpan Setoran', err.response?.data?.detail || 'Error koneksi server', 'error');
     } finally {
       setInputLoading(false);
     }
@@ -432,21 +441,21 @@ export default function MusyrifPortalMobile() {
         nilai_akhir: Number(nilaiAkhir),
         catatan_musyrif: catatanRaport,
       });
-      alert('Nilai Raport Berhasil Disimpan!');
+      showPopup('Raport Disimpan', 'Nilai Raport Berhasil Disimpan!', 'success');
       setShowRaportModal(false);
       fetchFullSantriProfile(selectedSantri.id);
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Gagal menyimpan raport');
+      showPopup('Gagal Simpan Raport', err.response?.data?.detail || 'Gagal menyimpan raport', 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
-  // AI FUNCTION 1: Rangkuman Harian AI (Per Hari)
+  // AI FUNCTION 1: Rangkuman Harian AI
   const handleFetchDailyAiSummary = async () => {
     if (!selectedSantri) return;
     setAiLoading(true);
-    setDailyAiSummary('Menggenerasi Rangkuman AI untuk tanggal ' + selectedDate + '...');
+    setDailyAiSummary('Menggenerasi Rangkuman AI kilat...');
     try {
       const res = await api.post(`/musyrif/ai/rangkuman-harian/${selectedSantri.id}`, {
         tanggal: selectedDate,
@@ -459,11 +468,11 @@ export default function MusyrifPortalMobile() {
     }
   };
 
-  // AI FUNCTION 2: Analisis Keseluruhan (Overall Trend)
+  // AI FUNCTION 2: Analisis Keseluruhan
   const handleFetchOverallAnalysis = async () => {
     if (!selectedSantri) return;
     setAiLoading(true);
-    setOverallAnalysis('Senior Musyrif AI sedang menganalisis SELURUH histori setoran...');
+    setOverallAnalysis('Senior Musyrif AI sedang menganalisis histori setoran...');
     try {
       const res = await api.post(`/musyrif/statistik/analisis/${selectedSantri.id}`);
       setOverallAnalysis(res.data?.data?.analisis_ai || 'Belum ada data analisis.');
@@ -474,7 +483,6 @@ export default function MusyrifPortalMobile() {
     }
   };
 
-  // Helper Filter Setoran Berdasarkan Tanggal yang Dipilih (Mendukung Multi-Format)
   const filteredSetoranByDate = historiSetoranFull.filter((s) => {
     if (!selectedDate) return true;
     const timeStr = String(s.waktu_setoran || s.waktu || s.created_at || s.tanggal || s.date || '');
@@ -493,7 +501,6 @@ export default function MusyrifPortalMobile() {
     );
   });
 
-  // Helper Hitung Counter Ringkasan Status
   const statusCounters = statusLogs.reduce(
     (acc: any, log: any) => {
       const st = (log.status || '').toLowerCase();
@@ -529,7 +536,7 @@ export default function MusyrifPortalMobile() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex justify-center p-4">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex justify-center p-4 relative">
       <div className="w-full max-w-md flex flex-col gap-5 pt-4">
         
         {/* TOP HEADER */}
@@ -610,69 +617,69 @@ export default function MusyrifPortalMobile() {
         )}
 
         {/* STEP 2: PILIH SANTRI */}
-{currentStep === 'select_student' && (
-  <div className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm">
-    <div className="flex justify-between items-center">
-      <h3 className="text-xs font-bold text-slate-500 tracking-wider uppercase">
-        {portalMode === 'input' ? '🎙️ Pilih Santri Penyetor' : '📊 Pilih Santri Dipantau'}
-      </h3>
-      <button onClick={() => setCurrentStep('menu')} className="text-xs text-emerald-600 font-semibold hover:text-emerald-700">
-        ← Kembali
-      </button>
-    </div>
+        {currentStep === 'select_student' && (
+          <div className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold text-slate-500 tracking-wider uppercase">
+                {portalMode === 'input' ? '🎙️ Pilih Santri Penyetor' : '📊 Pilih Santri Dipantau'}
+              </h3>
+              <button onClick={() => setCurrentStep('menu')} className="text-xs text-emerald-600 font-semibold hover:text-emerald-700">
+                ← Kembali
+              </button>
+            </div>
 
-    {/* Input Search Santri */}
-    <div className="mt-1">
-      <input
-        type="text"
-        placeholder="Cari nama atau NIS santri..."
-        value={searchSantriQuery}
-        onChange={(e) => setSearchSantriQuery(e.target.value)}
-        className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-800 placeholder-slate-400 shadow-sm transition"
-      />
-    </div>
+            <div className="mt-1">
+              <input
+                type="text"
+                placeholder="Cari nama atau NIS santri..."
+                value={searchSantriQuery}
+                onChange={(e) => setSearchSantriQuery(e.target.value)}
+                className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 text-slate-800 placeholder-slate-400 shadow-sm transition"
+              />
+            </div>
 
-    <div className="flex flex-col gap-2">
-      {error && <p className="text-xs text-center text-red-500 py-2">{error}</p>}
-      
-      {santriList.length === 0 ? (
-        <p className="text-xs text-center text-slate-400 py-4">Belum ada data santri.</p>
-      ) : (
-        (() => {
-          const filteredSantri = santriList.filter((s: any) => {
-            const name = (s.nama_santri || s.nama || '').toLowerCase();
-            const nis = (s.nomor_induk || '').toLowerCase();
-            const query = searchSantriQuery.toLowerCase();
-            return name.includes(query) || nis.includes(query);
-          });
+            <div className="flex flex-col gap-2">
+              {error && <p className="text-xs text-center text-red-500 py-2">{error}</p>}
+              
+              {santriList.length === 0 ? (
+                <p className="text-xs text-center text-slate-400 py-4">Belum ada data santri.</p>
+              ) : (
+                (() => {
+                  const filteredSantri = santriList.filter((s: any) => {
+                    const name = (s.nama_santri || s.nama || '').toLowerCase();
+                    const nis = (s.nomor_induk || '').toLowerCase();
+                    const query = searchSantriQuery.toLowerCase();
+                    return name.includes(query) || nis.includes(query);
+                  });
 
-          return filteredSantri.length === 0 ? (
-            <p className="text-xs text-center text-slate-400 py-4">Santri tidak ditemukan.</p>
-          ) : (
-            filteredSantri.map((s: any) => (
-              <div
-                key={s.id}
-                onClick={() => handleSelectSantri(s)}
-                className="bg-slate-50 hover:bg-emerald-50/70 p-3.5 rounded-2xl cursor-pointer border border-slate-200 hover:border-emerald-300 flex items-center justify-between transition group shadow-sm"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center border border-emerald-400 text-xs font-bold text-white">
-                    {(s.nama_santri || s.nama || 'S').charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-800">{s.nama_santri || s.nama}</h4>
-                    <p className="text-[10px] text-slate-500">NIS: {s.nomor_induk || '-'}</p>
-                  </div>
-                </div>
-                <div>{renderStatusBadge(s.status_santri)}</div>
-              </div>
-            ))
-          );
-        })()
-      )}
-    </div>
-  </div>
-)}
+                  return filteredSantri.length === 0 ? (
+                    <p className="text-xs text-center text-slate-400 py-4">Santri tidak ditemukan.</p>
+                  ) : (
+                    filteredSantri.map((s: any) => (
+                      <div
+                        key={s.id}
+                        onClick={() => handleSelectSantri(s)}
+                        className="bg-slate-50 hover:bg-emerald-50/70 p-3.5 rounded-2xl cursor-pointer border border-slate-200 hover:border-emerald-300 flex items-center justify-between transition group shadow-sm"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center border border-emerald-400 text-xs font-bold text-white">
+                            {(s.nama_santri || s.nama || 'S').charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800">{s.nama_santri || s.nama}</h4>
+                            <p className="text-[10px] text-slate-500">NIS: {s.nomor_induk || '-'}</p>
+                          </div>
+                        </div>
+                        <div>{renderStatusBadge(s.status_santri)}</div>
+                      </div>
+                    ))
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        )}
+
         {/* STEP 3: READY TO RECORD */}
         {currentStep === 'ready_to_record' && selectedSantri && (
           <div className="bg-white p-6 rounded-3xl border border-emerald-100 flex flex-col items-center text-center gap-5 animate-fadeIn shadow-sm">
@@ -741,7 +748,7 @@ export default function MusyrifPortalMobile() {
             </div>
 
             <p className="text-xs text-slate-600 font-medium max-w-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
-              {catatanMusyrif || 'Mendengarkan ucapan musyrif... (Contoh: "Juz 30 kaca 3 kelancaran lancar catatan qalqalah")'}
+              {catatanMusyrif || 'Mendengarkan ucapan musyrif...'}
             </p>
 
             <button
@@ -782,7 +789,7 @@ export default function MusyrifPortalMobile() {
                 </span>
               </div>
 
-              {/* Action Buttons for Status & Exam Modals */}
+              {/* Action Buttons */}
               <div className="flex gap-3 mt-5 w-full">
                 <button
                   type="button"
@@ -803,7 +810,7 @@ export default function MusyrifPortalMobile() {
               </div>
             </div>
 
-            {/* Navigation Tabs (Desain Ditumpuk agar tidak wrapping) */}
+            {/* Navigation Tabs */}
             <div className="flex bg-slate-100/80 p-1.5 rounded-2xl gap-1.5 border border-slate-200 shadow-inner mt-1">
               <button
                 onClick={() => setActiveTab('setoran_daily')}
@@ -841,7 +848,7 @@ export default function MusyrifPortalMobile() {
               </div>
             ) : (
               <>
-                {/* TAB 1: SETORAN PER HARI (DENGAN TANGGAL & AI RANGKUMAN HARIAN) */}
+                {/* TAB 1: SETORAN PER HARI */}
                 {activeTab === 'setoran_daily' && (
                   <div className="flex flex-col gap-4">
                     
@@ -861,7 +868,7 @@ export default function MusyrifPortalMobile() {
                       />
                     </div>
 
-                    {/* AI Buttons Bar (Desain Ditumpuk agar teks rapi) */}
+                    {/* AI Buttons Bar */}
                     <div className="grid grid-cols-2 gap-3 mt-1">
                       <button
                         type="button"
@@ -907,7 +914,7 @@ export default function MusyrifPortalMobile() {
                       </div>
                     )}
 
-                    {/* List Setoran Berdasarkan Tanggal yang Dipilih */}
+                    {/* List Setoran */}
                     <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
                       <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
                         <span className="text-[10px] uppercase font-bold text-slate-400">
@@ -1014,7 +1021,7 @@ export default function MusyrifPortalMobile() {
                 {activeTab === 'raport_log' && (
                   <div className="flex flex-col gap-4 animate-fadeIn">
                     
-                    {/* RINGKASAN COUNTER STATUS HARIAN */}
+                    {/* REKAPITULASI */}
                     <div className="bg-white p-4 rounded-3xl border border-emerald-100 shadow-sm">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-3">
                         📊 Rekapitulasi Presensi & Status
@@ -1039,7 +1046,7 @@ export default function MusyrifPortalMobile() {
                       </div>
                     </div>
 
-                    {/* SECTION 1: RAPORT SANTRI */}
+                    {/* SECTION 1: RAPORT */}
                     <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
                       <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
                         <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider">
@@ -1355,7 +1362,6 @@ export default function MusyrifPortalMobile() {
             </div>
 
             <div className="flex flex-col gap-4">
-              {/* Form 1: Pendaftaran Ujian */}
               <form onSubmit={handleDaftarUjian} className="flex flex-col gap-2.5 bg-sky-50 p-3 rounded-2xl border border-sky-200">
                 <span className="text-[10px] font-bold text-sky-800 uppercase">1. Daftarkan Ujian Baru</span>
                 <input
@@ -1381,7 +1387,6 @@ export default function MusyrifPortalMobile() {
                 </button>
               </form>
 
-              {/* Form 2: Submit Hasil Ujian */}
               <form onSubmit={handleSubmitHasilUjian} className="flex flex-col gap-2.5 bg-emerald-50 p-3 rounded-2xl border border-emerald-200">
                 <span className="text-[10px] font-bold text-emerald-800 uppercase">2. Input Hasil Ujian</span>
                 <select
@@ -1484,6 +1489,34 @@ export default function MusyrifPortalMobile() {
                 Simpan Nilai Raport
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP NOTIFIKASI MODAL UI (Pengganti Alert) */}
+      {popupModal.show && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white w-full max-w-xs rounded-3xl p-6 shadow-2xl border border-slate-100 text-center flex flex-col items-center">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl mb-3 shadow-sm ${
+              popupModal.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
+              popupModal.type === 'error' ? 'bg-rose-100 text-rose-600' : 'bg-sky-100 text-sky-600'
+            }`}>
+              {popupModal.type === 'success' ? '✓' : popupModal.type === 'error' ? '⚠️' : 'ℹ️'}
+            </div>
+            
+            <h3 className="text-sm font-black text-slate-800 mb-1">{popupModal.title}</h3>
+            <p className="text-xs text-slate-600 font-medium leading-relaxed mb-5">{popupModal.message}</p>
+            
+            <button
+              type="button"
+              onClick={closePopup}
+              className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-white shadow-md transition ${
+                popupModal.type === 'success' ? 'bg-emerald-600 hover:bg-emerald-500' :
+                popupModal.type === 'error' ? 'bg-rose-600 hover:bg-rose-500' : 'bg-slate-800 hover:bg-slate-700'
+              }`}
+            >
+              OK, Mengerti
+            </button>
           </div>
         </div>
       )}
