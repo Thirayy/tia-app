@@ -12,6 +12,12 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const headers = AxiosHeaders.from(config.headers);
   Object.entries(getAuthHeaders()).forEach(([key, value]) => headers.set(key, value));
+  // If request body is FormData, let the browser set the Content-Type
+  // (including the multipart boundary). Deleting the header here prevents
+  // sending a plain 'application/json' or an incomplete 'multipart/form-data'.
+  if (config.data && typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    headers.delete('Content-Type');
+  }
   config.headers = headers;
   return config;
 });
