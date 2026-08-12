@@ -6,23 +6,216 @@ import api from '@/lib/axiosInstance';
 import { getApiUrl, ensureArray } from '@/lib/api';
 import { clearSession, getSession, isAdminRole } from '@/lib/auth';
 
+// ----------------------------------------------------------------------
+// HELPER PARSER JSON AI UNTUK RAPORT[cite: 7]
+// ----------------------------------------------------------------------
+function parseAiAnalysisData(raw: any) {
+  if (!raw) return null;
+  if (typeof raw === 'object' && raw !== null) return raw;
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && parsed !== null) return parsed;
+      } catch (e) {
+        // Fallback jika parser gagal[cite: 7]
+      }
+    }
+  }
+  return { ringkasan: String(raw) };
+}
+
+// ----------------------------------------------------------------------
+// KOMPONEN TAMPILAN ANALISIS AI RAPORT (GNOME MODERN UI STYLE)[cite: 7]
+// ----------------------------------------------------------------------
+function FormattedAiAnalysis({ content }: { content: any }) {
+  const data = parseAiAnalysisData(content);
+  if (!data) return null;
+
+  if (data.ringkasan && Object.keys(data).length === 1) {
+    return (
+      <div className="bg-emerald-50/70 border border-emerald-200/80 p-4 rounded-2xl text-slate-700 text-xs leading-relaxed whitespace-pre-wrap shadow-xs">
+        {data.ringkasan}
+      </div>
+    );
+  }
+
+  const tajwidList = Array.isArray(data.kualitas_tajwid)
+    ? data.kualitas_tajwid
+    : typeof data.kualitas_tajwid === 'string' && data.kualitas_tajwid
+    ? data.kualitas_tajwid.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : [];
+
+  return (
+    <div className="flex flex-col gap-3 font-sans animate-fadeIn">
+      {/* METRICS & QUICK STATS GRID (GNOME DASHBOARD STYLE)[cite: 7] */}
+      {(data.kualitas_hafalan || data.absensi || tajwidList.length > 0) && (
+        <div className="grid grid-cols-2 gap-2 bg-slate-100/80 p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+          {data.kualitas_hafalan && (
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200/60 flex flex-col justify-between">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                Kualitas Hafalan
+              </span>
+              <span className="text-xs font-black text-emerald-700 capitalize flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                {String(data.kualitas_hafalan)}
+              </span>
+            </div>
+          )}
+
+          {data.absensi && (
+            <div className="bg-white p-2.5 rounded-xl border border-slate-200/60 flex flex-col justify-between">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                Kehadiran / Absensi
+              </span>
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                <span>✅</span> {String(data.absensi)}
+              </span>
+            </div>
+          )}
+
+          {tajwidList.length > 0 && (
+            <div className="col-span-2 bg-white p-2.5 rounded-xl border border-slate-200/60">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                Fokus Tajwid
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {tajwidList.map((item: string, i: number) => (
+                  <span
+                    key={i}
+                    className="bg-emerald-100/80 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg border border-emerald-300/60 flex items-center gap-1"
+                  >
+                    <span>🔊</span> {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 1. KONSISTENSI & AKTIVITAS HALAQOH[cite: 7] */}
+      {(data.konsistensi_halaqoh || data.konsistensi_setoran) && (
+        <div className="bg-indigo-50/70 border border-indigo-200/80 p-3.5 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider flex items-center gap-1.5 mb-1.5">
+            <span>📈</span> Performance & Konsistensi
+          </span>
+          <div className="space-y-1.5 text-xs text-slate-700 font-medium">
+            {data.konsistensi_halaqoh && (
+              <p className="flex items-start gap-1.5">
+                <span className="text-indigo-500">•</span>
+                <span><strong>Halaqoh:</strong> {String(data.konsistensi_halaqoh)}</span>
+              </p>
+            )}
+            {data.konsistensi_setoran && data.konsistensi_setoran !== data.konsistensi_halaqoh && (
+              <p className="flex items-start gap-1.5">
+                <span className="text-indigo-500">•</span>
+                <span><strong>Setoran:</strong> {String(data.konsistensi_setoran)}</span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 2. REKOMENDASI ORANG TUA[cite: 7] */}
+      {data.rekomendasi_orang_tua && (
+        <div className="bg-amber-50/80 border border-amber-200/80 p-3.5 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider flex items-center gap-1">
+            <span>🏡</span> Rekomendasi Untuk Orang Tua
+          </span>
+          <p className="text-xs text-slate-700 leading-relaxed font-medium mt-1">
+            {String(data.rekomendasi_orang_tua)}
+          </p>
+        </div>
+      )}
+
+      {/* 3. REKOMENDASI MUSYRIF / PENGAJAR[cite: 7] */}
+      {(data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan) && (
+        <div className="bg-sky-50/80 border border-sky-200/80 p-3.5 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-black uppercase text-sky-800 tracking-wider flex items-center gap-1">
+            <span>💡</span> Rekomendasi & Instruksi Latihan
+          </span>
+          <p className="text-xs text-slate-700 leading-relaxed font-medium mt-1">
+            {Array.isArray(data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan)
+              ? (data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan).join(', ')
+              : String(data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan)}
+          </p>
+        </div>
+      )}
+
+      {/* 4. CAPAIAN & KELEBIHAN[cite: 7] */}
+      {(data.kelebihan || data.capaian || data.poin_positif) && (
+        <div className="bg-emerald-50/80 border border-emerald-200/80 p-3.5 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1">
+            <span>🌟</span> Capaian & Kelebihan
+          </span>
+          <p className="text-xs text-slate-700 leading-relaxed font-medium mt-1">
+            {Array.isArray(data.kelebihan || data.capaian || data.poin_positif)
+              ? (data.kelebihan || data.capaian || data.poin_positif).join(', ')
+              : String(data.kelebihan || data.capaian || data.poin_positif)}
+          </p>
+        </div>
+      )}
+
+      {/* 5. CATATAN EVALUASI UMUM[cite: 7] */}
+      {(data.catatan_musyrif || data.catatan || data.evaluasi || data.kesimpulan) && (
+        <div className="bg-slate-100/90 border border-slate-200/80 p-3.5 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1">
+            <span>📌</span> Catatan Evaluasi Musyrif
+          </span>
+          <p className="text-xs text-slate-700 leading-relaxed font-medium italic mt-1">
+            "{String(data.catatan_musyrif || data.catatan || data.evaluasi || data.kesimpulan)}"
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// KOMPONEN TEXTAREA DINAMIS AUTO-RESIZE[cite: 7]
+// ----------------------------------------------------------------------
+interface DynamicTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  value: string;
+}
+
+function DynamicTextarea({ value, onChange, className = '', rows = 2, ...props }: DynamicTextareaProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={onChange}
+      rows={rows}
+      className={`w-full resize-none overflow-hidden transition-all duration-150 ${className}`}
+      {...props}
+    />
+  );
+}
+
+// ----------------------------------------------------------------------
+// MAIN PORTAL COMPONENT[cite: 7]
+// ----------------------------------------------------------------------
 export default function MusyrifPortalMobile() {
   const router = useRouter();
   const STORAGE_KEY = 'musyrif_portal_state';
 
-  // Helper extractor ID Santri
   const getSantriId = (santriObj: any): number | string | null => {
     if (!santriObj) return null;
     return santriObj.id ?? santriObj.santri_id ?? santriObj.student_id ?? null;
   };
 
-  // Helper Auto-Resize Textarea
-  const handleAutoResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    e.target.style.height = 'auto';
-    e.target.style.height = `${e.target.scrollHeight}px`;
-  };
-
-  // Basic States
   const [isStateLoaded, setIsStateLoaded] = useState(false);
   const [musyrifName, setMusyrifName] = useState('');
   const [santriList, setSantriList] = useState<any[]>([]);
@@ -31,10 +224,8 @@ export default function MusyrifPortalMobile() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
 
-  // Tab State
   const [activeTab, setActiveTab] = useState<'setoran_daily' | 'profile' | 'raport_log'>('setoran_daily');
 
-  // MUSYRIF PROFILE STATES
   const [musyrifProfileData, setMusyrifProfileData] = useState<any>(null);
   const [showMusyrifProfileModal, setShowMusyrifProfileModal] = useState(false);
   const [musyrifProfileTab, setMusyrifProfileTab] = useState<'info' | 'password'>('info');
@@ -47,13 +238,15 @@ export default function MusyrifPortalMobile() {
   const [uploadingFotoSantri, setUploadingFotoSantri] = useState(false);
   const [musyrifActionLoading, setMusyrifActionLoading] = useState(false);
 
-  // CUSTOM POPUP NOTIFICATION STATE
   const [popupModal, setPopupModal] = useState<{
     show: boolean;
     title: string;
     message: string;
     type: 'success' | 'error' | 'info';
   }>({ show: false, title: '', message: '', type: 'info' });
+
+  // State untuk Pop-up Detail Setoran per Item yang diklik
+  const [selectedSetoranDetail, setSelectedSetoranDetail] = useState<any>(null);
 
   const showPopup = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setPopupModal({ show: true, title, message, type });
@@ -63,7 +256,6 @@ export default function MusyrifPortalMobile() {
     setPopupModal((prev) => ({ ...prev, show: false }));
   };
 
-  // Tanggal Lokal Helper
   const getTodayLocalDate = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -74,58 +266,61 @@ export default function MusyrifPortalMobile() {
 
   const [selectedDate, setSelectedDate] = useState<string>(getTodayLocalDate());
 
-  // Profile Data State
   const [fullProfile, setFullProfile] = useState<any>(null);
   const [historiSetoranFull, setHistoriSetoranFull] = useState<any[]>([]);
   const [raportList, setRaportList] = useState<any[]>([]);
   const [statusLogs, setStatusLogs] = useState<any[]>([]);
   const [profileLoading, setProfileLoading] = useState(false);
 
-  // AI Output States
-  const [dailyAiSummary, setDailyAiSummary] = useState('');
+  const [dailyAiSummary, setDailyAiSummary] = useState<any>(null);
+  const [showAiModal, setShowAiModal] = useState(false);
   const [copilotLoading, setCopilotLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Workflow & Portal Mode
   const [currentStep, setCurrentStep] = useState<
     'menu' | 'select_student' | 'ready_to_record' | 'recording_session' | 'input_form' | 'student_detail'
   >('menu');
   const [portalMode, setPortalMode] = useState<'input' | 'monitor'>('input');
 
-  // Form Controls State
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [editStatus, setEditStatus] = useState('hadir');
   const [editKeterangan, setEditKeterangan] = useState('');
   const [editTargetHarian, setEditTargetHarian] = useState('');
 
-  // Form Ujian State (Hanya untuk pendaftaran)
   const [showUjianModal, setShowUjianModal] = useState(false);
   const [tanggalUjian, setTanggalUjian] = useState('');
   const [catatanPersiapan, setCatatanPersiapan] = useState('');
 
-  // POPUP FORM RAPORT STATE
   const [showRaportModal, setShowRaportModal] = useState(false);
+  const [showPrintRaportModal, setShowPrintRaportModal] = useState(false);
+  const [selectedRaportForPrint, setSelectedRaportForPrint] = useState<any>(null);
+
   const [semesterRaport, setSemesterRaport] = useState('Ganjil 2026/2027');
   const [nilaiHarian, setNilaiHarian] = useState(85);
   const [nilaiBulanan, setNilaiBulanan] = useState(85);
   const [nilaiAkhir, setNilaiAkhir] = useState(85);
   const [catatanRaport, setCatatanRaport] = useState('');
-  const [rekomendasiAiForm, setRekomendasiAiForm] = useState('');
 
-  // Form Input Setoran States
+  const initialAiFormFields = {
+    kualitas_hafalan: 'Sangat Baik',
+    absensi: '100% Hadir',
+    kualitas_tajwid: 'Madd Asli, Idgham Bighunnah',
+    konsistensi_halaqoh: 'Sangat baik dan istiqamah',
+    rekomendasi_orang_tua: 'Mohon didampingi saat murojaah di rumah.',
+    rekomendasi_musyrif: 'Pertahankan ritme setoran harian.',
+    kelebihan: 'Bagus dalam kelancaran dan tajwid.',
+  };
+
+  const [aiFormFields, setAiFormFields] = useState(initialAiFormFields);
+
   const [surahId, setSurahId] = useState<number | null>(null);
   const [surah, setSurah] = useState('');
   const [ayat, setAyat] = useState('');
-  const [statusSetoran, setStatusSetoran] = useState('Lancar');
-  const [catatanKoreksi, setCatatanKoreksi] = useState('');
-  const [adaTeguran, setAdaTeguran] = useState(false);
-  const [jenisTeguran, setJenisTeguran] = useState<string[]>([]);
-  const [catatanTeguran, setCatatanTeguran] = useState('');
   const [catatanMusyrif, setCatatanMusyrif] = useState('');
   const [searchSantriQuery, setSearchSantriQuery] = useState('');
-  const [newTeguranInput, setNewTeguranInput] = useState('');
 
   const [inputLoading, setInputLoading] = useState(false);
+  const [inputLoadingMessage, setInputLoadingMessage] = useState('Memproses...');
   const [actionLoading, setActionLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
@@ -133,7 +328,6 @@ export default function MusyrifPortalMobile() {
   const baseTextRef = useRef<string>('');
   const accumulatedTextRef = useRef<string>('');
 
-  // Restore LocalStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -151,7 +345,6 @@ export default function MusyrifPortalMobile() {
     }
   }, []);
 
-  // Save LocalStorage
   useEffect(() => {
     if (typeof window === 'undefined' || !isStateLoaded) return;
     localStorage.setItem(
@@ -175,14 +368,32 @@ export default function MusyrifPortalMobile() {
       setNilaiBulanan(latest.nilai_bulanan ?? 85);
       setNilaiAkhir(latest.nilai_akhir ?? 85);
       setCatatanRaport(latest.catatan_musyrif || '');
-      setRekomendasiAiForm(latest.rekomendasi_ai || latest.analisis_raport || '');
+
+      const parsed = parseAiAnalysisData(latest.rekomendasi_ai || latest.analisis_raport);
+      if (parsed) {
+        setAiFormFields({
+          kualitas_hafalan: parsed.kualitas_hafalan || 'Sangat Baik',
+          absensi: parsed.absensi || 'Hadir Istiqamah',
+          kualitas_tajwid: Array.isArray(parsed.kualitas_tajwid)
+            ? parsed.kualitas_tajwid.join(', ')
+            : parsed.kualitas_tajwid || '',
+          konsistensi_halaqoh: parsed.konsistensi_halaqoh || parsed.konsistensi_setoran || '',
+          rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || '',
+          rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran)
+            ? (parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
+            : String(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran || ''),
+          kelebihan: Array.isArray(parsed.kelebihan || parsed.capaian)
+            ? (parsed.kelebihan || parsed.capaian).join(', ')
+            : String(parsed.kelebihan || parsed.capaian || ''),
+        });
+      }
     } else {
       setSemesterRaport('Ganjil 2026/2027');
       setNilaiHarian(85);
       setNilaiBulanan(85);
       setNilaiAkhir(85);
       setCatatanRaport('');
-      setRekomendasiAiForm('');
+      setAiFormFields(initialAiFormFields);
     }
   }, [raportList]);
 
@@ -198,7 +409,6 @@ export default function MusyrifPortalMobile() {
     };
   }, []);
 
-  // API CALL: Fetch Musyrif Profile
   const fetchMusyrifProfile = async () => {
     try {
       const res = await api.get('/musyrif/profile');
@@ -244,7 +454,6 @@ export default function MusyrifPortalMobile() {
     fetchMusyrifProfile();
   }, [router]);
 
-  // MUSYRIF PROFILE HANDLERS
   const handleUpdateMusyrifProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setMusyrifActionLoading(true);
@@ -282,7 +491,6 @@ export default function MusyrifPortalMobile() {
     }
   };
 
-  // HANDLER UPLOAD FOTO SANTRI BINAAN
   const handleUploadFotoSantri = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const sId = getSantriId(selectedSantri);
     if (!sId) return;
@@ -333,7 +541,7 @@ export default function MusyrifPortalMobile() {
 
   const fetchFullSantriProfile = async (santriId: number | string) => {
     setProfileLoading(true);
-    setDailyAiSummary('');
+    setDailyAiSummary(null);
     try {
       const res = await api.get(`/musyrif/santri/${santriId}/profile`);
       const data = res.data;
@@ -384,18 +592,11 @@ export default function MusyrifPortalMobile() {
     setSurahId(null);
     setSurah('');
     setAyat('');
-    setStatusSetoran('Lancar');
-    setCatatanKoreksi('');
-    setAdaTeguran(false);
-    setJenisTeguran([]);
-    setCatatanTeguran('');
     setCatatanMusyrif('');
-    setNewTeguranInput('');
     baseTextRef.current = '';
     accumulatedTextRef.current = '';
   };
 
-  // RECOGNITION
   const startListening = (e?: any) => {
     if (e && e.preventDefault) e.preventDefault();
 
@@ -418,18 +619,32 @@ export default function MusyrifPortalMobile() {
       setIsListening(true);
     };
 
+    // PERBAIKAN: Menggunakan event.resultIndex untuk mencegah transkrip terulang/dobel (misal: "kaca2 kaca2")
     recognition.onresult = (event: any) => {
-      let sessionTranscript = '';
-      for (let i = 0; i < event.results.length; i++) {
-        sessionTranscript += event.results[i][0].transcript + ' ';
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
       }
-      const totalText = `${baseTextRef.current} ${sessionTranscript}`.trim();
+
+      if (finalTranscript) {
+        baseTextRef.current = (baseTextRef.current + ' ' + finalTranscript).trim();
+      }
+
+      const totalText = (baseTextRef.current + ' ' + interimTranscript).trim();
       accumulatedTextRef.current = totalText;
       setCatatanMusyrif(totalText);
     };
 
     recognition.onerror = (event: any) => {
-      console.warn('Speech recognition error:', event.error);
+      if (event.error !== 'aborted') {
+        console.warn('Speech recognition error:', event.error);
+      }
       setIsListening(false);
     };
 
@@ -469,38 +684,39 @@ export default function MusyrifPortalMobile() {
     }
 
     setCurrentStep('input_form');
+    setInputLoadingMessage('🤖 Memproses Voice AI & mengekstrak surah/ayat... Mohon tunggu sebentar.');
     setInputLoading(true);
 
     try {
       const res = await api.post(
         '/musyrif/parse-voice',
         { raw_text: finalTranscript },
-        { timeout: 20000 }
+        { timeout: 120000 }
       );
 
-      const draft = res.data?.draft;
+      const draft = res.data?.draft || res.data;
       if (draft) {
         if (draft.surah_id) setSurahId(draft.surah_id);
-        if (draft.surah_sahih) setSurah(draft.surah_sahih);
-        if (draft.ayat_standar) setAyat(draft.ayat_standar);
-        if (draft.status_kelancaran) setStatusSetoran(draft.status_kelancaran);
-        if (draft.catatan_koreksi) setCatatanKoreksi(draft.catatan_koreksi);
-        if (typeof draft.ada_teguran === 'boolean') setAdaTeguran(draft.ada_teguran);
-        if (Array.isArray(draft.jenis_teguran)) {
-          setJenisTeguran(draft.jenis_teguran);
-        }
-        if (draft.catatan_teguran) setCatatanTeguran(draft.catatan_teguran);
+        if (draft.surah && draft.surah !== '-') setSurah(draft.surah);
+        if (draft.ayat && draft.ayat !== '-') setAyat(draft.ayat);
         if (draft.catatan_musyrif) setCatatanMusyrif(draft.catatan_musyrif);
+        else setCatatanMusyrif(finalTranscript);
+      } else {
+        setCatatanMusyrif(finalTranscript);
       }
     } catch (err: any) {
-      console.warn('Fallback ke teks mentah:', err);
+      console.warn('Voice AI Parser Fallback ke Teks Mentah:', err);
       setCatatanMusyrif(finalTranscript);
+      showPopup(
+        'Voice AI Timeout / Fallback',
+        'Sistem tetap menyimpan suara ke teks mentah. Silakan periksa atau lengkapi kolom Surah & Ayat secara manual.',
+        'info'
+      );
     } finally {
       setInputLoading(false);
     }
   };
 
-  // ACTIONS
   const handleUpdateStatus = async (statusVal: string, ketVal: string = '') => {
     const sId = getSantriId(selectedSantri);
     if (!sId) return;
@@ -536,6 +752,7 @@ export default function MusyrifPortalMobile() {
         target_harian: editTargetHarian.trim(),
       });
       showPopup('Target Disimpan', 'Target Harian Berhasil Disimpan!', 'success');
+      setShowStatusModal(false);
       fetchFullSantriProfile(sId);
     } catch (err: any) {
       showPopup('Gagal', err.response?.data?.detail || 'Error', 'error');
@@ -575,6 +792,8 @@ export default function MusyrifPortalMobile() {
 
     const santriId = Number(getSantriId(selectedSantri));
     if (!santriId) return;
+
+    setInputLoadingMessage('💾 Menyimpan data setoran santri ke database...');
     setInputLoading(true);
 
     try {
@@ -582,15 +801,8 @@ export default function MusyrifPortalMobile() {
         santri_id: santriId,
         student_id: santriId,
         surah_id: surahId,
-        surah_sahih: surah.trim(),
         surah: surah.trim(),
-        ayat_standar: ayat.trim(),
         ayat: ayat.trim(),
-        status_kelancaran: statusSetoran,
-        catatan_koreksi: catatanKoreksi.trim() || null,
-        ada_teguran: jenisTeguran.length > 0 || adaTeguran,
-        jenis_teguran: jenisTeguran,
-        catatan_teguran: jenisTeguran.join(', ') || catatanTeguran.trim() || null,
         catatan_musyrif: catatanMusyrif.trim() || null,
       });
 
@@ -599,7 +811,7 @@ export default function MusyrifPortalMobile() {
       fetchFullSantriProfile(santriId);
       setCurrentStep('student_detail');
     } catch (err: any) {
-      showPopup('Gagal Simpan Setoran', err.response?.data?.detail || 'Error', 'error');
+      showPopup('Gagal Simpan Setoran', err.response?.data?.detail || 'Terjadi kesalahan saat menyimpan.', 'error');
     } finally {
       setInputLoading(false);
     }
@@ -610,21 +822,44 @@ export default function MusyrifPortalMobile() {
     if (!sId) return;
     setCopilotLoading(true);
     try {
-      const res = await api.post('/musyrif/raport/preview-ai', {
-        santri_id: Number(sId),
-        student_id: Number(sId),
-        semester: semesterRaport,
-        nilai_harian: Number(nilaiHarian),
-        nilai_bulanan: Number(nilaiBulanan),
-        nilai_akhir: Number(nilaiAkhir),
-        catatan_musyrif: catatanRaport,
-      });
-      if (res.data?.rekomendasi_ai || res.data?.analisis_ai) {
-        setRekomendasiAiForm(res.data.rekomendasi_ai || res.data.analisis_ai);
-        showPopup('✨ AI Berhasil', 'Analisis & Rekomendasi AI otomatis diisikan!', 'success');
+      const res = await api.post(
+        '/musyrif/raport/preview-ai',
+        {
+          santri_id: Number(sId),
+          student_id: Number(sId),
+          semester: semesterRaport,
+          nilai_harian: Number(nilaiHarian),
+          nilai_bulanan: Number(nilaiBulanan),
+          nilai_akhir: Number(nilaiAkhir),
+          catatan_musyrif: catatanRaport,
+        },
+        { timeout: 35000 }
+      );
+
+      const aiRes = res.data?.rekomendasi_ai || res.data?.analisis_ai || res.data;
+      if (aiRes) {
+        const parsed = parseAiAnalysisData(aiRes);
+        if (parsed) {
+          setAiFormFields({
+            kualitas_hafalan: parsed.kualitas_hafalan || 'Sangat Baik',
+            absensi: parsed.absensi || '100% Hadir',
+            kualitas_tajwid: Array.isArray(parsed.kualitas_tajwid)
+              ? parsed.kualitas_tajwid.join(', ')
+              : parsed.kualitas_tajwid || '',
+            konsistensi_halaqoh: parsed.konsistensi_halaqoh || parsed.konsistensi_setoran || '',
+            rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || '',
+            rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran)
+              ? (parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
+              : String(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran || ''),
+            kelebihan: Array.isArray(parsed.kelebihan || parsed.capaian)
+              ? (parsed.kelebihan || parsed.capaian).join(', ')
+              : String(parsed.kelebihan || parsed.capaian || ''),
+          });
+        }
+        showPopup('✨ AI Berhasil', 'Analisis & Rekomendasi AI berhasil dimuat langsung ke tampilan GNOME!', 'success');
       }
     } catch (e: any) {
-      showPopup('Gagal AI', 'Koneksi AI terganggu.', 'error');
+      showPopup('Gagal AI', 'Koneksi AI terganggu/timeout, silakan isi manual.', 'error');
     } finally {
       setCopilotLoading(false);
     }
@@ -635,6 +870,19 @@ export default function MusyrifPortalMobile() {
     const sId = getSantriId(selectedSantri);
     if (!sId) return;
     setActionLoading(true);
+
+    const formattedPayload = {
+      kualitas_hafalan: aiFormFields.kualitas_hafalan,
+      absensi: aiFormFields.absensi,
+      kualitas_tajwid: aiFormFields.kualitas_tajwid
+        ? aiFormFields.kualitas_tajwid.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+      konsistensi_halaqoh: aiFormFields.konsistensi_halaqoh,
+      rekomendasi_orang_tua: aiFormFields.rekomendasi_orang_tua,
+      rekomendasi_musyrif: aiFormFields.rekomendasi_musyrif,
+      kelebihan: aiFormFields.kelebihan,
+    };
+
     try {
       await api.post('/musyrif/raport', {
         santri_id: Number(sId),
@@ -644,8 +892,8 @@ export default function MusyrifPortalMobile() {
         nilai_bulanan: Number(nilaiBulanan),
         nilai_akhir: Number(nilaiAkhir),
         catatan_musyrif: catatanRaport,
-        rekomendasi_ai: rekomendasiAiForm.trim() || null,
-        auto_generate_ai: !rekomendasiAiForm.trim(),
+        rekomendasi_ai: JSON.stringify(formattedPayload),
+        auto_generate_ai: false,
       });
       showPopup('Raport Disimpan', 'Detail Raport & Analisa AI Berhasil Disimpan!', 'success');
       setShowRaportModal(false);
@@ -661,14 +909,26 @@ export default function MusyrifPortalMobile() {
     const sId = getSantriId(selectedSantri);
     if (!sId) return;
     setAiLoading(true);
-    setDailyAiSummary('Menggenerasi Rangkuman AI kilat...');
     try {
-      const res = await api.post(`/musyrif/ai/rangkuman-harian/${sId}`, {
-        tanggal: selectedDate,
-      });
-      setDailyAiSummary(res.data?.rangkuman_ai || 'Tidak ada rangkuman.');
+      const res = await api.post(
+        `/musyrif/ai/rangkuman-harian/${sId}`,
+        {
+          tanggal: selectedDate,
+        },
+        { timeout: 60000 }
+      );
+
+      const payload = res.data?.penilaian_harian_ai || res.data;
+      if (payload && typeof payload === 'object') {
+        setDailyAiSummary(payload);
+      } else {
+        setDailyAiSummary({
+          rangkuman_teks: res.data?.rangkuman_ai || res.data?.rangkuman || 'Tidak ada rangkuman.',
+        });
+      }
+      setShowAiModal(true);
     } catch (err) {
-      setDailyAiSummary('Gagal terhubung ke layanan AI.');
+      showPopup('AI Offline', 'Gagal terhubung ke layanan AI (Timeout / Server busy).', 'error');
     } finally {
       setAiLoading(false);
     }
@@ -703,15 +963,6 @@ export default function MusyrifPortalMobile() {
     },
     { hadir: 0, izin: 0, persiapan_ujian: 0, remed_ujian: 0 }
   );
-
-  const handleAddManualTeguran = () => {
-    const val = newTeguranInput.trim();
-    if (val) {
-      setJenisTeguran((prev) => [...prev, val]);
-      setAdaTeguran(true);
-      setNewTeguranInput('');
-    }
-  };
 
   const getDisplayPhotoUrl = (photoValue?: string | null) => {
     if (!photoValue) return null;
@@ -969,7 +1220,7 @@ export default function MusyrifPortalMobile() {
             )}
 
             <p className="text-[11px] text-slate-500 -mb-2">
-              Tahan tombol untuk merekam ucapan setoran/teguran.
+              Tahan tombol untuk merekam ucapan setoran.
             </p>
 
             <div className="relative flex items-center justify-center my-3">
@@ -1045,7 +1296,7 @@ export default function MusyrifPortalMobile() {
 
         {/* STEP 3.5: FORM VERIFIKASI SETORAN */}
         {currentStep === 'input_form' && selectedSantri && (
-          <form onSubmit={handleVerifySetoran} className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm">
+          <form onSubmit={handleVerifySetoran} className="bg-white p-5 rounded-3xl border border-emerald-100 flex flex-col gap-4 animate-fadeIn shadow-sm relative">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-3">
                 {getDisplayPhotoUrl(selectedSantri?.foto_profile || selectedSantri?.foto) ? (
@@ -1100,97 +1351,22 @@ export default function MusyrifPortalMobile() {
             </div>
 
             <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Kelancaran Bacaan</label>
-              <select
-                value={statusSetoran}
-                onChange={(e) => setStatusSetoran(e.target.value)}
-                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
-              >
-                <option value="Lancar">Lancar</option>
-                <option value="Cukup Lancar">Cukup Lancar</option>
-                <option value="Kurang Lancar">Kurang Lancar</option>
-                <option value="Mengulang">Mengulang</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Catatan Koreksi (Tajwid/Makhraj)</label>
-              <input
-                type="text"
-                placeholder="Catatan kesalahan bacaan..."
-                value={catatanKoreksi}
-                onChange={(e) => setCatatanKoreksi(e.target.value)}
-                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-              />
-            </div>
-
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-2">Kategori Teguran</label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {['Tajwid/Makhraj', 'Ingatan', 'Adab', 'Kedisiplinan', 'Lainnya'].map((teg) => {
-                  const isChecked = jenisTeguran.includes(teg);
-                  return (
-                    <button
-                      key={teg}
-                      type="button"
-                      onClick={() => {
-                        if (isChecked) {
-                          setJenisTeguran(jenisTeguran.filter((t) => t !== teg));
-                        } else {
-                          setJenisTeguran([...jenisTeguran, teg]);
-                          setAdaTeguran(true);
-                        }
-                      }}
-                      className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition ${
-                        isChecked
-                          ? 'bg-rose-600 text-white border-rose-600'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {teg}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Kategori teguran khusus..."
-                  value={newTeguranInput}
-                  onChange={(e) => setNewTeguranInput(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-200 rounded-xl flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddManualTeguran}
-                  className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-2 rounded-xl hover:bg-slate-300"
-                >
-                  + Tambah
-                </button>
-              </div>
-            </div>
-
-            <div>
               <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Catatan Musyrif</label>
-              <textarea
+              <DynamicTextarea
                 value={catatanMusyrif}
-                onChange={(e) => {
-                  setCatatanMusyrif(e.target.value);
-                  handleAutoResize(e);
-                }}
-                rows={2}
-                placeholder="Evaluasi keseluruhan..."
-                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none overflow-hidden transition-all"
+                onChange={(e) => setCatatanMusyrif(e.target.value)}
+                rows={3}
+                placeholder="Catatan evaluasi setoran..."
+                className="text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
               />
             </div>
 
             <button
               type="submit"
               disabled={inputLoading}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-2xl text-xs uppercase tracking-wider transition shadow-md"
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-2xl text-xs uppercase tracking-wider transition shadow-md mt-2 flex items-center justify-center gap-2"
             >
-              {inputLoading ? 'Menyimpan Setoran...' : 'Simpan Setoran Santri'}
+              <span>{inputLoading ? 'Sedang Menyimpan...' : 'Simpan Setoran Santri'}</span>
             </button>
           </form>
         )}
@@ -1207,7 +1383,7 @@ export default function MusyrifPortalMobile() {
               </button>
             </div>
 
-            {/* CARD PROFIL SANTRI BINAAN WITH PHOTO UPLOAD */}
+            {/* CARD PROFIL SANTRI */}
             <div className="bg-white border border-emerald-100 p-5 rounded-3xl flex flex-col items-center text-center shadow-sm relative">
               <div className="relative group mb-2">
                 {fullProfile?.foto_profile || fullProfile?.foto || selectedSantri?.foto_profile ? (
@@ -1329,23 +1505,12 @@ export default function MusyrifPortalMobile() {
                         type="button"
                         disabled={aiLoading}
                         onClick={handleFetchDailyAiSummary}
-                        className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-3.5 px-4 rounded-2xl uppercase tracking-wider transition shadow-md border border-emerald-500"
+                        className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold py-3.5 px-4 rounded-2xl uppercase tracking-wider transition shadow-md border border-emerald-500 disabled:opacity-50"
                       >
                         <span className="text-lg">⚡</span>
-                        <span>Rangkuman Hari Ini</span>
+                        <span>{aiLoading ? 'Sedang Memproses AI...' : 'Rangkuman Hari Ini'}</span>
                       </button>
                     </div>
-
-                    {dailyAiSummary && (
-                      <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl shadow-sm animate-fadeIn">
-                        <div className="text-[10px] font-bold uppercase text-emerald-700 tracking-wider mb-2">
-                          📋 Rangkuman AI Per Hari ({selectedDate}):
-                        </div>
-                        <div className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-medium">
-                          {dailyAiSummary}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
                       <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-3">
@@ -1363,32 +1528,85 @@ export default function MusyrifPortalMobile() {
                         </p>
                       ) : (
                         <div className="flex flex-col gap-3">
-                          {filteredSetoranByDate.map((item: any, idx: number) => (
-                            <div key={item.id || idx} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                              <div className="flex justify-between items-start mb-1">
-                                <div>
-                                  <h4 className="font-bold text-slate-800 text-xs">{item.surah}</h4>
-                                  <p className="text-[10px] text-slate-500">
-                                    Ayat {item.ayat} • {item.waktu_setoran || item.waktu || '-'}
-                                  </p>
+                          {filteredSetoranByDate.map((item: any, idx: number) => {
+                            const kelancaranVal = item.status_kelancaran || item.kelancaran || item.predikat || 'Lancar';
+                            const catatanText = item.catatan_musyrif || '';
+                            const catatanLines = catatanText ? catatanText.split(/\r?\n/).filter(Boolean) : [];
+
+                            const getKelancaranBadgeStyle = (val: string) => {
+                              const v = (val || '').toLowerCase();
+                              if (v.includes('tersendat')) {
+                                return 'bg-amber-100 border-amber-300 text-amber-800';
+                              } else if (v.includes('gagal') || v.includes('ulang') || v.includes('kurang')) {
+                                return 'bg-rose-100 border-rose-300 text-rose-800';
+                              }
+                              return 'bg-emerald-100 border-emerald-300 text-emerald-800';
+                            };
+
+                            // Menghitung jumlah tersendat & teguran secara dinamis dari data objek setoran
+                            const jumlahTersendat = Number(item.jumlah_tersendat ?? item.tersendat ?? 0);
+                            const jumlahTeguran = Number(item.jumlah_teguran ?? item.teguran ?? 0);
+
+                            return (
+                              <div
+                                key={item.id || idx}
+                                onClick={() => setSelectedSetoranDetail(item)}
+                                className="bg-slate-50 hover:bg-emerald-50/50 p-3.5 rounded-2xl border border-slate-200 cursor-pointer transition shadow-xs group"
+                              >
+                                <div className="flex justify-between items-start mb-2">
+                                  <div>
+                                    <h4 className="font-bold text-slate-800 text-xs group-hover:text-emerald-700 transition">
+                                      {item.surah}
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500">
+                                      Ayat {item.ayat} • {item.waktu_setoran || item.waktu || '-'}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <span className={`border text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${getKelancaranBadgeStyle(kelancaranVal)}`}>
+                                      {kelancaranVal}
+                                    </span>
+                                  </div>
                                 </div>
-                                <span
-                                  className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase ${
-                                    (item.status_kelancaran || item.status || '').toLowerCase().includes('lancar')
-                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                      : 'bg-amber-100 text-amber-800 border border-amber-300'
-                                  }`}
-                                >
-                                  {item.status_kelancaran || item.status}
-                                </span>
+                                
+                                <div className="flex flex-col gap-1.5 text-xs mt-2">
+                                  {jumlahTersendat > 0 && (
+                                    <div className="flex items-center gap-2 text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200">
+                                      <span>⚠️</span>
+                                      <span>
+                                        <strong>Jumlah Tersendat:</strong> {jumlahTersendat}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {jumlahTeguran > 0 && (
+                                    <div className="flex items-center gap-2 text-rose-800 bg-rose-50 px-2.5 py-1.5 rounded-xl border border-rose-200">
+                                      <span>🔔</span>
+                                      <span>
+                                        <strong>Jumlah Teguran:</strong> {jumlahTeguran}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {catatanText && (
+                                    <div className="flex items-start gap-2 text-slate-700 bg-slate-100/80 px-2.5 py-1.5 rounded-xl border border-slate-200">
+                                      <span>📝</span>
+                                      <span className="min-w-0">
+                                        <strong>Ringkasan Catatan / Kesalahan:</strong>
+                                        <p className="text-[11px] italic mt-0.5 line-clamp-2">
+                                          "{catatanText.replace(/^["']|["']$/g, '')}"
+                                        </p>
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  <div className="text-[9px] font-bold text-emerald-600 text-right mt-1">
+                                    Klik untuk detail lengkap & koreksi →
+                                  </div>
+                                </div>
                               </div>
-                              {item.catatan_musyrif && (
-                                <p className="text-[11px] text-slate-600 italic bg-white p-2 rounded-xl border border-slate-200 mt-2">
-                                  "{item.catatan_musyrif}"
-                                </p>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1402,14 +1620,13 @@ export default function MusyrifPortalMobile() {
                       <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
                         Informasi Akademik Santri
                       </h3>
-                      {/* BUTTON BUKA MODAL POPUP RAPORT */}
                       <button
                         type="button"
                         onClick={() => setShowRaportModal(true)}
                         className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl uppercase transition shadow-sm flex items-center gap-1"
                       >
                         <span>📑</span>
-                        <span>Raport & Nilai Santri</span>
+                        <span>Input Raport</span>
                       </button>
                     </div>
 
@@ -1488,7 +1705,6 @@ export default function MusyrifPortalMobile() {
                       </div>
                     </div>
 
-                    {/* LIST HISTORI RAPORT TERDAFTAR */}
                     <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm flex flex-col gap-4">
                       <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                         <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">
@@ -1499,44 +1715,82 @@ export default function MusyrifPortalMobile() {
                           className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl uppercase transition shadow-sm flex items-center gap-1"
                         >
                           <span>✏️</span>
-                          <span>Input / Edit Raport</span>
+                          <span>Input / Edit</span>
                         </button>
                       </div>
 
                       {raportList.length === 0 ? (
                         <p className="text-xs text-center text-slate-400 py-4">Belum ada riwayat raport terdaftar.</p>
                       ) : (
-                        <div className="flex flex-col gap-3">
-                          {raportList.map((r: any, idx: number) => (
-                            <div key={r.id || idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="font-bold text-xs text-slate-800">{r.semester}</span>
-                                <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                                  NA: {r.nilai_akhir ?? '-'}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600 mb-2">
-                                <span>Nilai Harian: <b>{r.nilai_harian ?? '-'}</b></span>
-                                <span>Nilai Bulanan: <b>{r.nilai_bulanan ?? '-'}</b></span>
-                              </div>
-                              {r.catatan_musyrif && (
-                                <p className="text-[11px] text-slate-700 italic bg-white p-2 rounded-xl border border-slate-200 mb-2">
-                                  "{r.catatan_musyrif}"
-                                </p>
-                              )}
-                              {r.rekomendasi_ai && (
-                                <div className="text-[10px] bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200 text-slate-700">
-                                  <span className="font-bold text-emerald-800 block mb-1">💡 Rekomendasi AI:</span>
-                                  <p className="whitespace-pre-wrap">{r.rekomendasi_ai}</p>
+                        <div className="flex flex-col gap-4">
+                          {raportList.map((r: any, idx: number) => {
+                            const aiContent = r.rekomendasi_ai || r.analisis_raport;
+                            return (
+                              <div
+                                key={r.id || idx}
+                                className="bg-slate-50/80 p-4 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col gap-3 relative overflow-hidden"
+                              >
+                                <div className="flex justify-between items-center border-b border-slate-200/60 pb-2.5">
+                                  <div>
+                                    <span className="text-[9px] font-bold uppercase text-emerald-700 block tracking-wider">
+                                      RAPOR EVALUASI
+                                    </span>
+                                    <h4 className="font-extrabold text-sm text-slate-800">{r.semester}</h4>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedRaportForPrint(r);
+                                        setShowPrintRaportModal(true);
+                                      }}
+                                      className="text-[10px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-xl shadow-xs transition flex items-center gap-1"
+                                    >
+                                      <span>🖨️</span>
+                                      <span>Rapor Siap Cetak</span>
+                                    </button>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          ))}
+
+                                <div className="grid grid-cols-3 gap-2 text-center bg-white p-2.5 rounded-2xl border border-slate-200/60">
+                                  <div className="border-r border-slate-100 pr-1">
+                                    <span className="text-[8px] font-bold uppercase text-slate-400 block">Harian</span>
+                                    <span className="text-xs font-bold text-slate-700">{r.nilai_harian ?? '-'}</span>
+                                  </div>
+                                  <div className="border-r border-slate-100 px-1">
+                                    <span className="text-[8px] font-bold uppercase text-slate-400 block">Bulanan</span>
+                                    <span className="text-xs font-bold text-slate-700">{r.nilai_bulanan ?? '-'}</span>
+                                  </div>
+                                  <div className="pl-1">
+                                    <span className="text-[8px] font-bold uppercase text-emerald-700 block">Nilai Akhir</span>
+                                    <span className="text-xs font-black text-emerald-700">{r.nilai_akhir ?? '-'}</span>
+                                  </div>
+                                </div>
+
+                                {r.catatan_musyrif && (
+                                  <div className="bg-white p-3 rounded-2xl border border-slate-200/60">
+                                    <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                                      💬 Catatan Musyrif
+                                    </span>
+                                    <p className="text-xs text-slate-700 italic">"{r.catatan_musyrif}"</p>
+                                  </div>
+                                )}
+
+                                {aiContent && (
+                                  <div className="flex flex-col gap-1.5 mt-1">
+                                    <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1">
+                                      <span>🤖</span>
+                                      <span>Analisis & Rekomendasi AI</span>
+                                    </span>
+                                    <FormattedAiAnalysis content={aiContent} />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
 
-                    {/* LOG STATUS RIWAYAT */}
                     <div className="bg-white p-5 rounded-3xl border border-emerald-100 shadow-sm">
                       <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3">
                         📜 Riwayat Log Status Presensi
@@ -1570,6 +1824,295 @@ export default function MusyrifPortalMobile() {
 
       </div>
 
+      {/* POPUP MODAL DETAIL SETORAN (LEBIH BESAR & DETAIL) */}
+      {selectedSetoranDetail && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[120] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-emerald-100 shadow-2xl flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📖</span>
+                <div>
+                  <h3 className="text-xs font-black text-emerald-800 uppercase tracking-wider">
+                    DETAIL SETORAN SANTRI
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {selectedSetoranDetail.waktu_setoran || selectedSetoranDetail.waktu || 'Waktu tidak tercatat'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedSetoranDetail(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Surah</span>
+                  <span className="text-xs font-black text-slate-800">{selectedSetoranDetail.surah || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Ayat</span>
+                  <span className="text-xs font-black text-slate-800">{selectedSetoranDetail.ayat || '-'}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200">
+                  <span className="text-[9px] font-bold text-amber-700 uppercase block">Jumlah Tersendat</span>
+                  <span className="text-sm font-black text-amber-900">
+                    {Number(selectedSetoranDetail.jumlah_tersendat ?? selectedSetoranDetail.tersendat ?? 0)} Kali
+                  </span>
+                </div>
+                <div className="bg-rose-50 p-3 rounded-2xl border border-rose-200">
+                  <span className="text-[9px] font-bold text-rose-700 uppercase block">Jumlah Teguran</span>
+                  <span className="text-sm font-black text-rose-900">
+                    {Number(selectedSetoranDetail.jumlah_teguran ?? selectedSetoranDetail.teguran ?? 0)} Kali
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                <span className="text-[9px] font-bold text-slate-500 uppercase block mb-1.5">
+                  📌 Catatan & Koreksi Kesalahan Detail
+                </span>
+                <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
+                  {selectedSetoranDetail.catatan_musyrif || 'Tidak ada catatan khusus.'}
+                </p>
+              </div>
+
+              <div className="bg-emerald-50/60 p-3 rounded-2xl border border-emerald-200 text-[11px] text-emerald-800">
+                💡 <strong>Info:</strong> Untuk analisis komprehensif kesalahan dan rekomendasi harian secara mendalam, gunakan menu <strong>Rangkuman Hari Ini</strong> pada halaman utama setoran.
+              </div>
+            </div>
+
+            <button
+              onClick={() => setSelectedSetoranDetail(null)}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition shadow mt-1"
+            >
+              Tutup Detail
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY POPUP LOADING */}
+      {inputLoading && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-emerald-100 shadow-2xl flex flex-col items-center text-center gap-4">
+            <div className="relative flex items-center justify-center my-2">
+              <div className="w-16 h-16 rounded-full border-4 border-emerald-200 border-t-emerald-600 animate-spin"></div>
+              <span className="absolute text-2xl">🤖</span>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-1">
+                Sedang Memproses AI...
+              </h3>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                {inputLoadingMessage || 'Mohon tunggu sejenak, sistem sedang mengolah data setoran.'}
+              </p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-3 py-2 text-[10px] font-bold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+              <span>Anda sedang dalam antrean proses AI...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP NOTIFIKASI CUSTOM */}
+      {popupModal.show && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-xs w-full p-5 border border-slate-200 shadow-2xl flex flex-col items-center text-center gap-3">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl ${
+              popupModal.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
+              popupModal.type === 'error' ? 'bg-rose-100 text-rose-600' : 'bg-sky-100 text-sky-600'
+            }`}>
+              {popupModal.type === 'success' ? '✅' : popupModal.type === 'error' ? '❌' : 'ℹ️'}
+            </div>
+            <div>
+              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider mb-1">
+                {popupModal.title}
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {popupModal.message}
+              </p>
+            </div>
+            <button
+              onClick={closePopup}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2.5 rounded-xl uppercase transition mt-1"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP MODAL RANGKUMAN AI HARIAN */}
+      {showAiModal && dailyAiSummary && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 border border-emerald-100 shadow-2xl flex flex-col gap-4 animate-fadeIn max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🤖</span>
+                <div>
+                  <h3 className="text-xs font-black text-emerald-800 uppercase tracking-wider">
+                    EVALUASI AI HARIAN
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-medium">Tanggal: {selectedDate}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAiModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <FormattedAiAnalysis content={dailyAiSummary} />
+
+            <button
+              onClick={() => setShowAiModal(false)}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition shadow mt-1"
+            >
+              Tutup Rangkuman
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP MODAL UBAH STATUS & TARGET HARIAN */}
+      {showStatusModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 border border-emerald-100 shadow-2xl flex flex-col gap-4 animate-fadeIn">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                ⚙️ Pengaturan Status & Target
+              </h3>
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Status Kehadiran</label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800"
+                >
+                  <option value="hadir">Hadir</option>
+                  <option value="izin">Izin</option>
+                  <option value="persiapan_ujian">Persiapan Ujian</option>
+                  <option value="remed_ujian">Remedial</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Keterangan Status</label>
+                <input
+                  type="text"
+                  value={editKeterangan}
+                  onChange={(e) => setEditKeterangan(e.target.value)}
+                  placeholder="Keterangan tambahan (opsional)..."
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => handleUpdateStatus(editStatus, editKeterangan)}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2.5 rounded-xl uppercase transition shadow"
+              >
+                {actionLoading ? 'Menyimpan...' : 'Perbarui Status'}
+              </button>
+
+              <hr className="border-slate-100 my-1" />
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Target Harian Santri</label>
+                <input
+                  type="text"
+                  value={editTargetHarian}
+                  onChange={(e) => setEditTargetHarian(e.target.value)}
+                  placeholder="Contoh: 1 Juz / 5 Halaman"
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={handleSaveTargetHarian}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2.5 rounded-xl uppercase transition shadow"
+              >
+                {actionLoading ? 'Menyimpan...' : 'Simpan Target Harian'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP MODAL DAFTAR UJIAN */}
+      {showUjianModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 border border-emerald-100 shadow-2xl flex flex-col gap-4 animate-fadeIn">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                📝 Pendaftaran Ujian Santri
+              </h3>
+              <button
+                onClick={() => setShowUjianModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleDaftarUjian} className="flex flex-col gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tanggal Ujian</label>
+                <input
+                  type="date"
+                  value={tanggalUjian}
+                  onChange={(e) => setTanggalUjian(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Catatan Persiapan Ujian</label>
+                <DynamicTextarea
+                  value={catatanPersiapan}
+                  onChange={(e) => setCatatanPersiapan(e.target.value)}
+                  placeholder="Catatan persiapan atau materi ujian..."
+                  rows={3}
+                  className="text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold py-3 rounded-xl uppercase transition shadow mt-1"
+              >
+                {actionLoading ? 'Menyimpan...' : 'Daftarkan Ujian'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* POPUP MODAL FORM INPUT & EDIT RAPORT */}
       {showRaportModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1589,7 +2132,7 @@ export default function MusyrifPortalMobile() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmitRaport} className="flex flex-col gap-3">
+            <form onSubmit={handleSubmitRaport} className="flex flex-col gap-4">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Semester</label>
                 <input
@@ -1636,40 +2179,108 @@ export default function MusyrifPortalMobile() {
 
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Catatan Musyrif</label>
-                <textarea
+                <DynamicTextarea
                   value={catatanRaport}
-                  onChange={(e) => {
-                    setCatatanRaport(e.target.value);
-                    handleAutoResize(e);
-                  }}
+                  onChange={(e) => setCatatanRaport(e.target.value)}
                   placeholder="Catatan perkembangan santri selama semester..."
                   rows={2}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none overflow-hidden transition-all"
+                  className="text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
                 />
               </div>
 
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[10px] font-bold text-emerald-700 uppercase">Rekomendasi / Analisa AI Copilot</label>
+              <div className="border border-emerald-200/80 p-3.5 bg-emerald-50/40 rounded-2xl flex flex-col gap-3">
+                <div className="flex justify-between items-center border-b border-emerald-200/60 pb-2">
+                  <label className="text-[10px] font-black text-emerald-800 uppercase flex items-center gap-1.5 tracking-wider">
+                    <span>🤖</span>
+                    <span>Analisis AI Copilot (Form GNOME)</span>
+                  </label>
                   <button
                     type="button"
                     onClick={handleGenerateCopilotRaport}
                     disabled={copilotLoading}
-                    className="text-[9px] font-bold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 px-2.5 py-1 rounded-lg uppercase transition"
+                    className="text-[9px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 px-2.5 py-1 rounded-lg uppercase transition shadow-2xs"
                   >
-                    {copilotLoading ? 'Generasi...' : '✨ Generate AI'}
+                    {copilotLoading ? 'Generasi AI...' : '✨ Auto-Fill AI'}
                   </button>
                 </div>
-                <textarea
-                  value={rekomendasiAiForm}
-                  onChange={(e) => {
-                    setRekomendasiAiForm(e.target.value);
-                    handleAutoResize(e);
-                  }}
-                  placeholder="Klik 'Generate AI' atau ketik masukan AI manual..."
-                  rows={3}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-emerald-200 rounded-xl resize-none overflow-hidden transition-all"
-                />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Kualitas Hafalan</label>
+                    <input
+                      type="text"
+                      value={aiFormFields.kualitas_hafalan}
+                      onChange={(e) => setAiFormFields({ ...aiFormFields, kualitas_hafalan: e.target.value })}
+                      placeholder="Sangat Baik / Perlu Murajaah"
+                      className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-bold text-emerald-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Absensi / Kehadiran</label>
+                    <input
+                      type="text"
+                      value={aiFormFields.absensi}
+                      onChange={(e) => setAiFormFields({ ...aiFormFields, absensi: e.target.value })}
+                      placeholder="100% Hadir"
+                      className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Fokus Tajwid (Pisahkan dengan koma)</label>
+                  <input
+                    type="text"
+                    value={aiFormFields.kualitas_tajwid}
+                    onChange={(e) => setAiFormFields({ ...aiFormFields, kualitas_tajwid: e.target.value })}
+                    placeholder="Madd Asli, Ghunnah, Idgham"
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Performance & Konsistensi</label>
+                  <input
+                    type="text"
+                    value={aiFormFields.konsistensi_halaqoh}
+                    onChange={(e) => setAiFormFields({ ...aiFormFields, konsistensi_halaqoh: e.target.value })}
+                    placeholder="Konsisten dan istiqamah"
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Rekomendasi Untuk Orang Tua</label>
+                  <DynamicTextarea
+                    value={aiFormFields.rekomendasi_orang_tua}
+                    onChange={(e) => setAiFormFields({ ...aiFormFields, rekomendasi_orang_tua: e.target.value })}
+                    placeholder="Instruksi untuk wali santri di rumah..."
+                    rows={2}
+                    className="text-xs p-2 bg-white border border-slate-200 rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Rekomendasi / Instruksi Musyrif</label>
+                  <DynamicTextarea
+                    value={aiFormFields.rekomendasi_musyrif}
+                    onChange={(e) => setAiFormFields({ ...aiFormFields, rekomendasi_musyrif: e.target.value })}
+                    placeholder="Saran latihan & evaluasi musyrif..."
+                    rows={2}
+                    className="text-xs p-2 bg-white border border-slate-200 rounded-xl"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Capaian & Kelebihan</label>
+                  <input
+                    type="text"
+                    value={aiFormFields.kelebihan}
+                    onChange={(e) => setAiFormFields({ ...aiFormFields, kelebihan: e.target.value })}
+                    placeholder="Lancar murajaah, tajwid fasih..."
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-medium"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-2 mt-2">
@@ -1693,310 +2304,126 @@ export default function MusyrifPortalMobile() {
         </div>
       )}
 
-      {/* MODAL EDIT PROFIL MUSYRIF */}
-      {showMusyrifProfileModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 border border-emerald-100 shadow-2xl flex flex-col gap-4 animate-fadeIn">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
-                ⚙️ Profil Musyrif
-              </h3>
-              <button
-                onClick={() => setShowMusyrifProfileModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-              <button
-                type="button"
-                onClick={() => setMusyrifProfileTab('info')}
-                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-lg transition ${
-                  musyrifProfileTab === 'info' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                Informasi
-              </button>
-              <button
-                type="button"
-                onClick={() => setMusyrifProfileTab('password')}
-                className={`flex-1 py-1.5 text-[10px] font-bold uppercase rounded-lg transition ${
-                  musyrifProfileTab === 'password' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                Password
-              </button>
-            </div>
-
-            {musyrifProfileTab === 'info' ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="relative">
-                    {musyrifProfileData?.foto_profile ? (
-                      <img
-                        src={
-                          musyrifProfileData.foto_profile.startsWith('http')
-                            ? musyrifProfileData.foto_profile
-                            : getApiUrl(musyrifProfileData.foto_profile)
-                        }
-                        alt="Foto Profil"
-                        className="w-16 h-16 rounded-full object-cover border-2 border-emerald-500 shadow"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-emerald-600 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow">
-                        {(musyrifNamaLengkap || 'M').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-
-                  <label className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-xl cursor-pointer hover:bg-emerald-100 transition">
-                    {uploadingFoto ? 'Mengunggah...' : '📷 Unggah Foto'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleUploadFotoMusyrif}
-                      className="hidden"
-                      disabled={uploadingFoto}
-                    />
-                  </label>
-                </div>
-
-                <form onSubmit={handleUpdateMusyrifProfile} className="flex flex-col gap-3 mt-2">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nama Lengkap</label>
-                    <input
-                      type="text"
-                      value={musyrifNamaLengkap}
-                      onChange={(e) => setMusyrifNamaLengkap(e.target.value)}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Username</label>
-                    <input
-                      type="text"
-                      value={musyrifUsername}
-                      onChange={(e) => setMusyrifUsername(e.target.value)}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                      required
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={musyrifActionLoading}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow mt-1"
-                  >
-                    {musyrifActionLoading ? 'Menyimpan...' : 'Simpan Profil'}
-                  </button>
-                </form>
-              </div>
-            ) : (
-              <form onSubmit={handleChangePasswordMusyrif} className="flex flex-col gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Password Lama</label>
-                  <input
-                    type="password"
-                    value={passwordLama}
-                    onChange={(e) => setPasswordLama(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Password Baru</label>
-                  <input
-                    type="password"
-                    value={passwordBaru}
-                    onChange={(e) => setPasswordBaru(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Konfirmasi Password Baru</label>
-                  <input
-                    type="password"
-                    value={konfirmasiPasswordBaru}
-                    onChange={(e) => setKonfirmasiPasswordBaru(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={musyrifActionLoading}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow mt-1"
-                >
-                  {musyrifActionLoading ? 'Memproses...' : 'Ubah Password'}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* MODAL SET TARGET & STATUS */}
-      {showStatusModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 border border-emerald-100 shadow-2xl flex flex-col gap-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
-                ⚙️ Atur Target & Presensi
-              </h3>
-              <button
-                onClick={() => setShowStatusModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Target Harian Santri</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={editTargetHarian}
-                    onChange={(e) => setEditTargetHarian(e.target.value)}
-                    placeholder="misal: 1 Halaman / Day"
-                    className="flex-1 text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveTargetHarian}
-                    disabled={actionLoading}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 rounded-xl uppercase"
-                  >
-                    Simpan
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-3">
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ubah Status Presensi</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold mb-2"
-                >
-                  <option value="hadir">Hadir</option>
-                  <option value="izin">Izin / Sakit</option>
-                </select>
-
-                {editStatus === 'izin' && (
-                  <input
-                    type="text"
-                    placeholder="Keterangan Izin/Sakit..."
-                    value={editKeterangan}
-                    onChange={(e) => setEditKeterangan(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl mb-2"
-                  />
-                )}
-
+      {/* POPUP MODAL LEMBAR RAPOR SIAP CETAK */}
+      {showPrintRaportModal && selectedRaportForPrint && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-3 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 border border-slate-200 shadow-2xl flex flex-col gap-5 animate-fadeIn my-auto text-slate-800">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 print:hidden">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <span>📄</span> Preview Lembar Rapor Santri
+              </span>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleUpdateStatus(editStatus, editKeterangan)}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2.5 rounded-xl uppercase tracking-wider"
+                  onClick={() => window.print()}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-xl shadow transition"
                 >
-                  {actionLoading ? 'Memproses...' : 'Update Presensi'}
+                  🖨️ Cetak Rapor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPrintRaportModal(false)}
+                  className="text-slate-400 hover:text-slate-600 text-lg font-bold px-1"
+                >
+                  ✕
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* MODAL PENDAFTARAN UJIAN */}
-      {showUjianModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 border border-emerald-100 shadow-2xl flex flex-col gap-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
-                📝 Pendaftaran Ujian
-              </h3>
-              <button
-                onClick={() => setShowUjianModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {fullProfile?.status_santri === 'persiapan_ujian' && (
-              <div className="bg-sky-50 border border-sky-200 p-3 rounded-2xl text-xs text-sky-800 font-medium leading-relaxed">
-                ℹ️ Santri saat ini terdaftar dalam masa persiapan ujian. Penilaian hasil ujian akan ditentukan oleh <b>Admin</b>.
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
+              <div className="text-center border-b-2 border-slate-800 pb-3">
+                <h2 className="text-base font-black tracking-widest text-slate-900 uppercase">
+                  LEMBAR EVALUASI & RAPOR HALAQAH
+                </h2>
+                <p className="text-[10px] font-bold text-slate-500 tracking-wider uppercase">
+                  PROGRAM TAHFIDZ & MURAJA'AH AL-QUR'AN
+                </p>
               </div>
-            )}
 
-            <form onSubmit={handleDaftarUjian} className="flex flex-col gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tanggal Jadwal Ujian</label>
-                <input
-                  type="date"
-                  value={tanggalUjian}
-                  onChange={(e) => setTanggalUjian(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200/70">
+                <div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Nama Santri</span>
+                  <span className="font-bold text-slate-800">{fullProfile?.nama_santri || selectedSantri?.nama_santri || selectedSantri?.nama}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">NIS / Nomor Induk</span>
+                  <span className="font-bold text-slate-800">{fullProfile?.nomor_induk || selectedSantri?.nomor_induk || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Semester / Periode</span>
+                  <span className="font-bold text-slate-800">{selectedRaportForPrint.semester}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Musyrif Pembina</span>
+                  <span className="font-bold text-slate-800">{fullProfile?.nama_musyrif || musyrifName}</span>
+                </div>
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Catatan Persiapan</label>
-                <textarea
-                  value={catatanPersiapan}
-                  onChange={(e) => {
-                    setCatatanPersiapan(e.target.value);
-                    handleAutoResize(e);
-                  }}
-                  placeholder="Materi / Juz yang diujikan..."
-                  rows={2}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl resize-none overflow-hidden transition-all"
-                />
+                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1.5">
+                  1. Rekapitulasi Capaian Nilai
+                </span>
+                <table className="w-full text-xs border-collapse border border-slate-200 rounded-xl overflow-hidden">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase border-b border-slate-200">
+                      <th className="p-2 text-left border-r border-slate-200">Kategori Evaluasi</th>
+                      <th className="p-2 text-center">Nilai Angka</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    <tr>
+                      <td className="p-2 border-r border-slate-200 font-medium">Nilai Harian / Kehadiran</td>
+                      <td className="p-2 text-center font-bold text-slate-800">{selectedRaportForPrint.nilai_harian ?? '-'}</td>
+                    </tr>
+                    <tr>
+                      <td className="p-2 border-r border-slate-200 font-medium">Nilai Ujian Bulanan</td>
+                      <td className="p-2 text-center font-bold text-slate-800">{selectedRaportForPrint.nilai_bulanan ?? '-'}</td>
+                    </tr>
+                    <tr className="bg-emerald-50/50">
+                      <td className="p-2 border-r border-slate-200 font-bold text-emerald-900">Nilai Akhir Rapor</td>
+                      <td className="p-2 text-center font-black text-emerald-700 text-sm">{selectedRaportForPrint.nilai_akhir ?? '-'}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
-              <button
-                type="submit"
-                disabled={actionLoading}
-                className="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow"
-              >
-                {actionLoading ? 'Mendaftarkan...' : 'Daftarkan Ujian'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+              {(selectedRaportForPrint.rekomendasi_ai || selectedRaportForPrint.analisis_raport) && (
+                <div>
+                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1.5">
+                    2. Analisis & Rekomendasi AI
+                  </span>
+                  <FormattedAiAnalysis content={selectedRaportForPrint.rekomendasi_ai || selectedRaportForPrint.analisis_raport} />
+                </div>
+              )}
 
-      {/* POPUP NOTIFIKASI SYSTEM */}
-      {popupModal.show && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xs w-full p-5 text-center flex flex-col items-center gap-3 shadow-2xl animate-fadeIn">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${
-              popupModal.type === 'success' ? 'bg-emerald-100 text-emerald-600' : popupModal.type === 'error' ? 'bg-rose-100 text-rose-600' : 'bg-sky-100 text-sky-600'
-            }`}>
-              {popupModal.type === 'success' ? '✓' : popupModal.type === 'error' ? '✕' : 'ℹ'}
+              {selectedRaportForPrint.catatan_musyrif && (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-[9px] font-bold uppercase text-slate-500 block mb-1">
+                    3. Catatan Musyrif Halaqah
+                  </span>
+                  <p className="text-xs text-slate-700 leading-relaxed italic">
+                    "{selectedRaportForPrint.catatan_musyrif}"
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 pt-6 text-center text-xs text-slate-700">
+                <div>
+                  <p className="text-[10px] text-slate-400">Orang Tua / Wali Santri</p>
+                  <div className="h-14"></div>
+                  <p className="font-bold border-t border-slate-300 pt-1 mx-4">( ................................ )</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400">Musyrif Pembina</p>
+                  <div className="h-14"></div>
+                  <p className="font-bold border-t border-slate-300 pt-1 mx-4">({musyrifName})</p>
+                </div>
+              </div>
             </div>
-            <h4 className="font-bold text-sm text-slate-800">{popupModal.title}</h4>
-            <p className="text-xs text-slate-600 leading-relaxed">{popupModal.message}</p>
-            <button
-              onClick={closePopup}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold py-2.5 rounded-xl uppercase tracking-wider mt-1 transition"
-            >
-              OK
-            </button>
           </div>
         </div>
       )}
 
     </div>
   );
-}
+} 
