@@ -20,6 +20,9 @@ const ARRAY_KEYS = [
   'items',
   'laporan',
   'riwayat_lengkap',
+  'raport',
+  'histori_status_log',
+  'histori_setoran_full',
 ] as const;
 
 /** Safely extract an array from varied backend response shapes. */

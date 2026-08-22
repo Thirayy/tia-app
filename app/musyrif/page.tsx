@@ -7,166 +7,127 @@ import { getApiUrl, ensureArray } from '@/lib/api';
 import { clearSession, getSession, isAdminRole } from '@/lib/auth';
 
 // ----------------------------------------------------------------------
-// HELPER PARSER JSON AI UNTUK RAPORT[cite: 7]
+// HELPER PARSER JSON AI UNTUK RAPORT
 // ----------------------------------------------------------------------
-function parseAiAnalysisData(raw: any) {
+function parseAiAnalysisData(raw: any): any {
   if (!raw) return null;
-  if (typeof raw === 'object' && raw !== null) return raw;
 
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim();
+  let data = raw;
+
+  if (typeof data === 'string') {
+    let trimmed = data.trim();
+    if (trimmed.startsWith('```json')) {
+      trimmed = trimmed.substring(7);
+    } else if (trimmed.startsWith('```')) {
+      trimmed = trimmed.substring(3);
+    }
+    if (trimmed.endsWith('```')) {
+      trimmed = trimmed.substring(0, trimmed.length - 3);
+    }
+    trimmed = trimmed.trim();
+
     if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {
-        const parsed = JSON.parse(trimmed);
-        if (typeof parsed === 'object' && parsed !== null) return parsed;
-      } catch (e) {
-        // Fallback jika parser gagal[cite: 7]
+        data = JSON.parse(trimmed);
+      } catch {
+        return { ringkasan: trimmed };
       }
+    } else {
+      return { ringkasan: trimmed };
     }
   }
-  return { ringkasan: String(raw) };
+
+  if (typeof data === 'object' && data !== null) {
+    if (data.preview_raport_ai) {
+      return parseAiAnalysisData(data.preview_raport_ai);
+    }
+    if (data.rekomendasi_ai) {
+      return parseAiAnalysisData(data.rekomendasi_ai);
+    }
+    if (data.analisis_raport) {
+      return parseAiAnalysisData(data.analisis_raport);
+    }
+    if (data.data && typeof data.data === 'object' && !Array.isArray(data.data) && (data.data.preview_raport_ai || data.data.rekomendasi_ai || data.data.evaluasi_musyrif || data.data.kualitas_hafalan)) {
+      return parseAiAnalysisData(data.data);
+    }
+
+    const normalized: Record<string, any> = { ...data };
+
+    if (data.evaluasi_musyrif && !normalized.rekomendasi_musyrif) {
+      normalized.rekomendasi_musyrif = data.evaluasi_musyrif;
+    }
+    if (data.rekomendasi_musyrif && !normalized.evaluasi_musyrif) {
+      normalized.evaluasi_musyrif = data.rekomendasi_musyrif;
+    }
+    if (data.rekomendasi_ortu && !normalized.rekomendasi_orang_tua) {
+      normalized.rekomendasi_orang_tua = data.rekomendasi_ortu;
+    }
+    if (data.rekomendasi_orang_tua && !normalized.rekomendasi_ortu) {
+      normalized.rekomendasi_ortu = data.rekomendasi_orang_tua;
+    }
+    if (data.pesan_santri && !normalized.pesan_anak) {
+      normalized.pesan_anak = data.pesan_santri;
+    }
+    if (data.pesan_untuk_anak && !normalized.pesan_anak) {
+      normalized.pesan_anak = data.pesan_untuk_anak;
+    }
+    
+    return normalized;
+  }
+
+  return { ringkasan: String(data) };
 }
 
 // ----------------------------------------------------------------------
-// KOMPONEN TAMPILAN ANALISIS AI RAPORT (GNOME MODERN UI STYLE)[cite: 7]
+// KOMPONEN TAMPILAN ANALISIS AI RAPORT (GNOME MODERN UI STYLE)
 // ----------------------------------------------------------------------
 function FormattedAiAnalysis({ content }: { content: any }) {
   const data = parseAiAnalysisData(content);
   if (!data) return null;
 
-  if (data.ringkasan && Object.keys(data).length === 1) {
-    return (
-      <div className="bg-emerald-50/70 border border-emerald-200/80 p-4 rounded-2xl text-slate-700 text-xs leading-relaxed whitespace-pre-wrap shadow-xs">
-        {data.ringkasan}
-      </div>
-    );
-  }
 
-  const tajwidList = Array.isArray(data.kualitas_tajwid)
-    ? data.kualitas_tajwid
-    : typeof data.kualitas_tajwid === 'string' && data.kualitas_tajwid
-    ? data.kualitas_tajwid.split(',').map((s: string) => s.trim()).filter(Boolean)
-    : [];
+  const rekomendasiOrtu = data.rekomendasi_orang_tua || data.rekomendasi_ortu;
+  const evaluasiMusyrif = data.rekomendasi_musyrif || data.evaluasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan;
+  const pesanAnak = data.pesan_anak || data.pesan_santri || data.pesan_untuk_anak;
+
 
   return (
-    <div className="flex flex-col gap-3 font-sans animate-fadeIn">
-      {/* METRICS & QUICK STATS GRID (GNOME DASHBOARD STYLE)[cite: 7] */}
-      {(data.kualitas_hafalan || data.absensi || tajwidList.length > 0) && (
-        <div className="grid grid-cols-2 gap-2 bg-slate-100/80 p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-          {data.kualitas_hafalan && (
-            <div className="bg-white p-2.5 rounded-xl border border-slate-200/60 flex flex-col justify-between">
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
-                Kualitas Hafalan
-              </span>
-              <span className="text-xs font-black text-emerald-700 capitalize flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {String(data.kualitas_hafalan)}
-              </span>
-            </div>
-          )}
+    <div className="flex flex-col gap-2.5 font-sans animate-fadeIn text-xs">
 
-          {data.absensi && (
-            <div className="bg-white p-2.5 rounded-xl border border-slate-200/60 flex flex-col justify-between">
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
-                Kehadiran / Absensi
-              </span>
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                <span>✅</span> {String(data.absensi)}
-              </span>
-            </div>
-          )}
-
-          {tajwidList.length > 0 && (
-            <div className="col-span-2 bg-white p-2.5 rounded-xl border border-slate-200/60">
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
-                Fokus Tajwid
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {tajwidList.map((item: string, i: number) => (
-                  <span
-                    key={i}
-                    className="bg-emerald-100/80 text-emerald-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-lg border border-emerald-300/60 flex items-center gap-1"
-                  >
-                    <span>🔊</span> {item}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 1. KONSISTENSI & AKTIVITAS HALAQOH[cite: 7] */}
-      {(data.konsistensi_halaqoh || data.konsistensi_setoran) && (
-        <div className="bg-indigo-50/70 border border-indigo-200/80 p-3.5 rounded-2xl shadow-xs">
-          <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider flex items-center gap-1.5 mb-1.5">
-            <span>📈</span> Performance & Konsistensi
-          </span>
-          <div className="space-y-1.5 text-xs text-slate-700 font-medium">
-            {data.konsistensi_halaqoh && (
-              <p className="flex items-start gap-1.5">
-                <span className="text-indigo-500">•</span>
-                <span><strong>Halaqoh:</strong> {String(data.konsistensi_halaqoh)}</span>
-              </p>
-            )}
-            {data.konsistensi_setoran && data.konsistensi_setoran !== data.konsistensi_halaqoh && (
-              <p className="flex items-start gap-1.5">
-                <span className="text-indigo-500">•</span>
-                <span><strong>Setoran:</strong> {String(data.konsistensi_setoran)}</span>
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 2. REKOMENDASI ORANG TUA[cite: 7] */}
-      {data.rekomendasi_orang_tua && (
+      {/* 1. REKOMENDASI ORANG TUA */}
+      {rekomendasiOrtu && (
         <div className="bg-amber-50/80 border border-amber-200/80 p-3.5 rounded-2xl shadow-xs">
           <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider flex items-center gap-1">
             <span>🏡</span> Rekomendasi Untuk Orang Tua
           </span>
           <p className="text-xs text-slate-700 leading-relaxed font-medium mt-1">
-            {String(data.rekomendasi_orang_tua)}
+            {String(rekomendasiOrtu)}
           </p>
         </div>
       )}
 
-      {/* 3. REKOMENDASI MUSYRIF / PENGAJAR[cite: 7] */}
-      {(data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan) && (
+      {/* 2. REKOMENDASI MUSYRIF / PENGAJAR */}
+      {evaluasiMusyrif && (
         <div className="bg-sky-50/80 border border-sky-200/80 p-3.5 rounded-2xl shadow-xs">
           <span className="text-[10px] font-black uppercase text-sky-800 tracking-wider flex items-center gap-1">
-            <span>💡</span> Rekomendasi & Instruksi Latihan
+            <span>💡</span> Evaluasi & Rekomendasi Musyrif
           </span>
           <p className="text-xs text-slate-700 leading-relaxed font-medium mt-1">
-            {Array.isArray(data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan)
-              ? (data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan).join(', ')
-              : String(data.rekomendasi_musyrif || data.rekomendasi || data.saran || data.area_pengembangan)}
+            {Array.isArray(evaluasiMusyrif)
+              ? evaluasiMusyrif.join(', ')
+              : String(evaluasiMusyrif)}
           </p>
         </div>
       )}
 
-      {/* 4. CAPAIAN & KELEBIHAN[cite: 7] */}
-      {(data.kelebihan || data.capaian || data.poin_positif) && (
-        <div className="bg-emerald-50/80 border border-emerald-200/80 p-3.5 rounded-2xl shadow-xs">
-          <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider flex items-center gap-1">
-            <span>🌟</span> Capaian & Kelebihan
+      {/* 3. PESAN UNTUK SANTRI / ANAK */}
+      {pesanAnak && (
+        <div className="bg-purple-50/80 border border-purple-200/80 p-3.5 rounded-2xl shadow-xs">
+          <span className="text-[10px] font-black uppercase text-purple-800 tracking-wider flex items-center gap-1">
+            <span>💌</span> Pesan Motivasi Santri
           </span>
           <p className="text-xs text-slate-700 leading-relaxed font-medium mt-1">
-            {Array.isArray(data.kelebihan || data.capaian || data.poin_positif)
-              ? (data.kelebihan || data.capaian || data.poin_positif).join(', ')
-              : String(data.kelebihan || data.capaian || data.poin_positif)}
-          </p>
-        </div>
-      )}
-
-      {/* 5. CATATAN EVALUASI UMUM[cite: 7] */}
-      {(data.catatan_musyrif || data.catatan || data.evaluasi || data.kesimpulan) && (
-        <div className="bg-slate-100/90 border border-slate-200/80 p-3.5 rounded-2xl shadow-xs">
-          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1">
-            <span>📌</span> Catatan Evaluasi Musyrif
-          </span>
-          <p className="text-xs text-slate-700 leading-relaxed font-medium italic mt-1">
-            "{String(data.catatan_musyrif || data.catatan || data.evaluasi || data.kesimpulan)}"
+            {String(pesanAnak)}
           </p>
         </div>
       )}
@@ -175,7 +136,7 @@ function FormattedAiAnalysis({ content }: { content: any }) {
 }
 
 // ----------------------------------------------------------------------
-// KOMPONEN TEXTAREA DINAMIS AUTO-RESIZE[cite: 7]
+// KOMPONEN TEXTAREA DINAMIS AUTO-RESIZE
 // ----------------------------------------------------------------------
 interface DynamicTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   value: string;
@@ -205,7 +166,7 @@ function DynamicTextarea({ value, onChange, className = '', rows = 2, ...props }
 }
 
 // ----------------------------------------------------------------------
-// MAIN PORTAL COMPONENT[cite: 7]
+// MAIN PORTAL COMPONENT
 // ----------------------------------------------------------------------
 export default function MusyrifPortalMobile() {
   const router = useRouter();
@@ -302,13 +263,9 @@ export default function MusyrifPortalMobile() {
   const [catatanRaport, setCatatanRaport] = useState('');
 
   const initialAiFormFields = {
-    kualitas_hafalan: 'Sangat Baik',
-    absensi: '100% Hadir',
-    kualitas_tajwid: 'Madd Asli, Idgham Bighunnah',
-    konsistensi_halaqoh: 'Sangat baik dan istiqamah',
     rekomendasi_orang_tua: 'Mohon didampingi saat murojaah di rumah.',
     rekomendasi_musyrif: 'Pertahankan ritme setoran harian.',
-    kelebihan: 'Bagus dalam kelancaran dan tajwid.',
+    pesan_anak: 'Barakallahu fiik! Pertahankan semangat menghafal Al-Quran.',
   };
 
   const [aiFormFields, setAiFormFields] = useState(initialAiFormFields);
@@ -327,6 +284,79 @@ export default function MusyrifPortalMobile() {
   const recognitionRef = useRef<any>(null);
   const baseTextRef = useRef<string>('');
   const accumulatedTextRef = useRef<string>('');
+
+  const fetchMusyrifProfile = async () => {
+    try {
+      const res = await api.get('/musyrif/profile');
+      if (res.data?.data) {
+        const profile = res.data.data;
+        setMusyrifProfileData(profile);
+        setMusyrifNamaLengkap(profile.nama_lengkap || '');
+        setMusyrifUsername(profile.username || '');
+        if (profile.nama_lengkap) {
+          setMusyrifName(profile.nama_lengkap);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Gagal memuat profil musyrif:', err);
+    }
+  };
+
+  const fetchSantriList = async () => {
+    setLoading(true);
+    setError(null);
+    const session = getSession();
+    if (!session?.username) {
+      router.push('/login');
+      return;
+    }
+    setUserRole(session.role);
+    setMusyrifName(session.nama_lengkap || session.nama || session.username);
+
+    try {
+      const res = await api.get('/musyrif/halaqah');
+      const list = ensureArray(res.data.data || res.data.santri || res.data);
+      setSantriList(list);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Gagal mengambil data santri');
+      setSantriList([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchFullSantriProfile = async (santriId: number | string) => {
+    setProfileLoading(true);
+    setDailyAiSummary(null);
+    try {
+      const res = await api.get(`/musyrif/santri/${santriId}/profile`);
+      const data = res.data;
+
+      if (data) {
+        const profileObj = data.profile || data.data?.profile || data.santri || data;
+        setFullProfile(profileObj);
+
+        const rawSetoran =
+          data.histori_setoran_full ||
+          data.histori_setoran ||
+          data.setoran ||
+          data.data?.histori_setoran_full ||
+          [];
+        setHistoriSetoranFull(ensureArray(rawSetoran));
+
+        setRaportList(ensureArray(data.raport || data.data?.raport));
+        setStatusLogs(ensureArray(data.histori_status_log || data.data?.histori_status_log));
+
+        if (profileObj?.target_harian) {
+          setEditTargetHarian(profileObj.target_harian);
+        }
+      }
+    } catch (e) {
+      console.error('Gagal fetch profil santri:', e);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -372,19 +402,11 @@ export default function MusyrifPortalMobile() {
       const parsed = parseAiAnalysisData(latest.rekomendasi_ai || latest.analisis_raport);
       if (parsed) {
         setAiFormFields({
-          kualitas_hafalan: parsed.kualitas_hafalan || 'Sangat Baik',
-          absensi: parsed.absensi || 'Hadir Istiqamah',
-          kualitas_tajwid: Array.isArray(parsed.kualitas_tajwid)
-            ? parsed.kualitas_tajwid.join(', ')
-            : parsed.kualitas_tajwid || '',
-          konsistensi_halaqoh: parsed.konsistensi_halaqoh || parsed.konsistensi_setoran || '',
-          rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || '',
-          rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran)
-            ? (parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
-            : String(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran || ''),
-          kelebihan: Array.isArray(parsed.kelebihan || parsed.capaian)
-            ? (parsed.kelebihan || parsed.capaian).join(', ')
-            : String(parsed.kelebihan || parsed.capaian || ''),
+          rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || parsed.rekomendasi_ortu || '',
+          rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran)
+            ? (parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
+            : String(parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran || ''),
+          pesan_anak: parsed.pesan_anak || parsed.pesan_santri || parsed.pesan_untuk_anak || '',
         });
       }
     } else {
@@ -408,46 +430,6 @@ export default function MusyrifPortalMobile() {
       }
     };
   }, []);
-
-  const fetchMusyrifProfile = async () => {
-    try {
-      const res = await api.get('/musyrif/profile');
-      if (res.data?.data) {
-        const profile = res.data.data;
-        setMusyrifProfileData(profile);
-        setMusyrifNamaLengkap(profile.nama_lengkap || '');
-        setMusyrifUsername(profile.username || '');
-        if (profile.nama_lengkap) {
-          setMusyrifName(profile.nama_lengkap);
-        }
-      }
-    } catch (err: any) {
-      console.warn('Gagal memuat profil musyrif:', err);
-    }
-  };
-
-  const fetchSantriList = async () => {
-    setLoading(true);
-    setError(null);
-    const session = getSession();
-    if (!session?.username) {
-      router.push('/login');
-      return;
-    }
-    setUserRole(session.role);
-    setMusyrifName(session.nama_lengkap || session.nama || session.username);
-
-    try {
-      const res = await api.get('/musyrif/halaqah');
-      const list = ensureArray(res.data.data || res.data.santri || res.data);
-      setSantriList(list);
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Gagal mengambil data santri');
-      setSantriList([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchSantriList();
@@ -539,39 +521,6 @@ export default function MusyrifPortalMobile() {
     }
   };
 
-  const fetchFullSantriProfile = async (santriId: number | string) => {
-    setProfileLoading(true);
-    setDailyAiSummary(null);
-    try {
-      const res = await api.get(`/musyrif/santri/${santriId}/profile`);
-      const data = res.data;
-
-      if (data) {
-        const profileObj = data.profile || data.data?.profile || data.santri || data;
-        setFullProfile(profileObj);
-
-        const rawSetoran =
-          data.histori_setoran_full ||
-          data.histori_setoran ||
-          data.setoran ||
-          data.data?.histori_setoran_full ||
-          [];
-        setHistoriSetoranFull(ensureArray(rawSetoran));
-
-        setRaportList(ensureArray(data.raport || data.data?.raport));
-        setStatusLogs(ensureArray(data.histori_status_log || data.data?.histori_status_log));
-
-        if (profileObj?.target_harian) {
-          setEditTargetHarian(profileObj.target_harian);
-        }
-      }
-    } catch (e) {
-      console.error('Gagal fetch profil santri:', e);
-    } finally {
-      setProfileLoading(false);
-    }
-  };
-
   const handleSelectSantri = (santri: any) => {
     const sId = getSantriId(santri);
     setSelectedSantri(santri);
@@ -593,8 +542,6 @@ export default function MusyrifPortalMobile() {
     setSurah('');
     setAyat('');
     setCatatanMusyrif('');
-    baseTextRef.current = '';
-    accumulatedTextRef.current = '';
   };
 
   const startListening = (e?: any) => {
@@ -610,6 +557,9 @@ export default function MusyrifPortalMobile() {
 
     if (isListening) return;
 
+    baseTextRef.current = '';
+    accumulatedTextRef.current = '';
+
     const recognition = new SpeechRecognition();
     recognition.lang = 'id-ID';
     recognition.continuous = true;
@@ -619,7 +569,6 @@ export default function MusyrifPortalMobile() {
       setIsListening(true);
     };
 
-    // PERBAIKAN: Menggunakan event.resultIndex untuk mencegah transkrip terulang/dobel (misal: "kaca2 kaca2")
     recognition.onresult = (event: any) => {
       let interimTranscript = '';
       let finalTranscript = '';
@@ -817,9 +766,44 @@ export default function MusyrifPortalMobile() {
     }
   };
 
+  const handleOpenRaportModal = (item?: any) => {
+    const target = item || (raportList && raportList.length > 0 ? raportList[0] : null);
+    if (target) {
+      setSemesterRaport(target.semester || 'Ganjil 2026/2027');
+      setNilaiHarian(target.nilai_harian ?? 85);
+      setNilaiBulanan(target.nilai_bulanan ?? 85);
+      setNilaiAkhir(target.nilai_akhir ?? 85);
+      setCatatanRaport(target.catatan_musyrif || '');
+
+      const parsed = parseAiAnalysisData(target.rekomendasi_ai || target.analisis_raport);
+      if (parsed) {
+        setAiFormFields({
+          rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || parsed.rekomendasi_ortu || '',
+          rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran)
+            ? (parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
+            : String(parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran || ''),
+          pesan_anak: parsed.pesan_anak || parsed.pesan_santri || parsed.pesan_untuk_anak || '',
+        });
+      } else {
+        setAiFormFields(initialAiFormFields);
+      }
+    } else {
+      setSemesterRaport('Ganjil 2026/2027');
+      setNilaiHarian(85);
+      setNilaiBulanan(85);
+      setNilaiAkhir(85);
+      setCatatanRaport('');
+      setAiFormFields(initialAiFormFields);
+    }
+    setShowRaportModal(true);
+  };
+
   const handleGenerateCopilotRaport = async () => {
     const sId = getSantriId(selectedSantri);
-    if (!sId) return;
+    if (!sId) {
+      showPopup('Santri Belum Dipilih', 'Pilih santri terlebih dahulu.', 'error');
+      return;
+    }
     setCopilotLoading(true);
     try {
       const res = await api.post(
@@ -836,30 +820,29 @@ export default function MusyrifPortalMobile() {
         { timeout: 35000 }
       );
 
-      const aiRes = res.data?.rekomendasi_ai || res.data?.analisis_ai || res.data;
-      if (aiRes) {
-        const parsed = parseAiAnalysisData(aiRes);
+      const rawAi = res.data?.preview_raport_ai || res.data?.rekomendasi_ai || res.data?.analisis_ai || res.data?.data || res.data;
+      if (rawAi) {
+        const parsed = parseAiAnalysisData(rawAi);
         if (parsed) {
-          setAiFormFields({
-            kualitas_hafalan: parsed.kualitas_hafalan || 'Sangat Baik',
-            absensi: parsed.absensi || '100% Hadir',
-            kualitas_tajwid: Array.isArray(parsed.kualitas_tajwid)
-              ? parsed.kualitas_tajwid.join(', ')
-              : parsed.kualitas_tajwid || '',
-            konsistensi_halaqoh: parsed.konsistensi_halaqoh || parsed.konsistensi_setoran || '',
-            rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || '',
-            rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran)
-              ? (parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
-              : String(parsed.rekomendasi_musyrif || parsed.rekomendasi || parsed.saran || ''),
-            kelebihan: Array.isArray(parsed.kelebihan || parsed.capaian)
-              ? (parsed.kelebihan || parsed.capaian).join(', ')
-              : String(parsed.kelebihan || parsed.capaian || ''),
-          });
+          setAiFormFields((prev) => ({
+            rekomendasi_orang_tua: parsed.rekomendasi_orang_tua || parsed.rekomendasi_ortu || prev.rekomendasi_orang_tua || '',
+            rekomendasi_musyrif: Array.isArray(parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran)
+              ? (parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran).join(', ')
+              : String(parsed.rekomendasi_musyrif || parsed.evaluasi_musyrif || parsed.rekomendasi || parsed.saran || prev.rekomendasi_musyrif || ''),
+            pesan_anak: parsed.pesan_anak || parsed.pesan_santri || parsed.pesan_untuk_anak || prev.pesan_anak || '',
+          }));
+
+          if ((parsed.evaluasi_musyrif || parsed.catatan_musyrif) && (!catatanRaport || catatanRaport.trim() === '')) {
+            setCatatanRaport(parsed.evaluasi_musyrif || parsed.catatan_musyrif);
+          }
+
+          showPopup('✨ AI Berhasil', 'Analisis & Rekomendasi AI berhasil dimuat ke formulir raport!', 'success');
+        } else {
+          showPopup('Info AI', 'AI tidak memberikan respons evaluasi tambahan.', 'info');
         }
-        showPopup('✨ AI Berhasil', 'Analisis & Rekomendasi AI berhasil dimuat langsung ke tampilan GNOME!', 'success');
       }
     } catch (e: any) {
-      showPopup('Gagal AI', 'Koneksi AI terganggu/timeout, silakan isi manual.', 'error');
+      showPopup('Gagal AI', e.response?.data?.detail || 'Koneksi AI terganggu/timeout, silakan isi manual.', 'error');
     } finally {
       setCopilotLoading(false);
     }
@@ -868,23 +851,23 @@ export default function MusyrifPortalMobile() {
   const handleSubmitRaport = async (e: React.FormEvent) => {
     e.preventDefault();
     const sId = getSantriId(selectedSantri);
-    if (!sId) return;
+    if (!sId) {
+      showPopup('Santri Belum Dipilih', 'Pilih santri terlebih dahulu.', 'error');
+      return;
+    }
     setActionLoading(true);
 
+
     const formattedPayload = {
-      kualitas_hafalan: aiFormFields.kualitas_hafalan,
-      absensi: aiFormFields.absensi,
-      kualitas_tajwid: aiFormFields.kualitas_tajwid
-        ? aiFormFields.kualitas_tajwid.split(',').map((s) => s.trim()).filter(Boolean)
-        : [],
-      konsistensi_halaqoh: aiFormFields.konsistensi_halaqoh,
       rekomendasi_orang_tua: aiFormFields.rekomendasi_orang_tua,
+      rekomendasi_ortu: aiFormFields.rekomendasi_orang_tua,
       rekomendasi_musyrif: aiFormFields.rekomendasi_musyrif,
-      kelebihan: aiFormFields.kelebihan,
+      evaluasi_musyrif: aiFormFields.rekomendasi_musyrif,
+      pesan_anak: aiFormFields.pesan_anak,
     };
 
     try {
-      await api.post('/musyrif/raport', {
+      const res = await api.post('/musyrif/raport', {
         santri_id: Number(sId),
         student_id: Number(sId),
         semester: semesterRaport,
@@ -895,11 +878,13 @@ export default function MusyrifPortalMobile() {
         rekomendasi_ai: JSON.stringify(formattedPayload),
         auto_generate_ai: false,
       });
-      showPopup('Raport Disimpan', 'Detail Raport & Analisa AI Berhasil Disimpan!', 'success');
+
+      const message = res.data?.message || 'Detail Raport & Analisa AI Berhasil Disimpan!';
+      showPopup('Raport Disimpan', message, 'success');
       setShowRaportModal(false);
-      fetchFullSantriProfile(sId);
+      await fetchFullSantriProfile(sId);
     } catch (err: any) {
-      showPopup('Gagal Simpan Raport', err.response?.data?.detail || 'Error', 'error');
+      showPopup('Gagal Simpan Raport', err.response?.data?.detail || err.message || 'Terjadi kesalahan saat menyimpan raport.', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -994,11 +979,11 @@ export default function MusyrifPortalMobile() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex justify-center p-4 relative">
       <div className="w-full max-w-md flex flex-col gap-5 pt-4">
-        
+
         {/* TOP HEADER */}
         <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm">
-          <div 
-            onClick={() => setShowMusyrifProfileModal(true)} 
+          <div
+            onClick={() => setShowMusyrifProfileModal(true)}
             className="flex items-center gap-3 cursor-pointer group"
           >
             <div className="relative">
@@ -1030,7 +1015,7 @@ export default function MusyrifPortalMobile() {
               </h2>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => setShowMusyrifProfileModal(true)}
@@ -1127,7 +1112,7 @@ export default function MusyrifPortalMobile() {
 
             <div className="flex flex-col gap-2">
               {error && <p className="text-xs text-center text-red-500 py-2">{error}</p>}
-              
+
               {santriList.length === 0 ? (
                 <p className="text-xs text-center text-slate-400 py-4">Belum ada data santri.</p>
               ) : (
@@ -1282,7 +1267,7 @@ export default function MusyrifPortalMobile() {
               >
                 Atau Input Manual (Tanpa Voice)
               </button>
-              
+
               <button
                 type="button"
                 onClick={() => setCurrentStep('select_student')}
@@ -1397,7 +1382,7 @@ export default function MusyrifPortalMobile() {
                     {(selectedSantri.nama_santri || selectedSantri.nama || 'S').charAt(0).toUpperCase()}
                   </div>
                 )}
-                
+
                 <label className="absolute bottom-0 right-0 bg-emerald-600 hover:bg-emerald-500 text-white p-1.5 rounded-full shadow-lg cursor-pointer transition">
                   <span className="text-xs">📷</span>
                   <input
@@ -1417,7 +1402,7 @@ export default function MusyrifPortalMobile() {
               <h1 className="text-lg font-black text-slate-800">
                 {fullProfile?.nama_santri || selectedSantri.nama_santri || selectedSantri.nama}
               </h1>
-              
+
               <div className="flex items-center gap-2 mt-2">
                 {renderStatusBadge(fullProfile?.status_santri || selectedSantri.status_santri)}
                 <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
@@ -1531,7 +1516,6 @@ export default function MusyrifPortalMobile() {
                           {filteredSetoranByDate.map((item: any, idx: number) => {
                             const kelancaranVal = item.status_kelancaran || item.kelancaran || item.predikat || 'Lancar';
                             const catatanText = item.catatan_musyrif || '';
-                            const catatanLines = catatanText ? catatanText.split(/\r?\n/).filter(Boolean) : [];
 
                             const getKelancaranBadgeStyle = (val: string) => {
                               const v = (val || '').toLowerCase();
@@ -1543,7 +1527,6 @@ export default function MusyrifPortalMobile() {
                               return 'bg-emerald-100 border-emerald-300 text-emerald-800';
                             };
 
-                            // Menghitung jumlah tersendat & teguran secara dinamis dari data objek setoran
                             const jumlahTersendat = Number(item.jumlah_tersendat ?? item.tersendat ?? 0);
                             const jumlahTeguran = Number(item.jumlah_teguran ?? item.teguran ?? 0);
 
@@ -1568,7 +1551,7 @@ export default function MusyrifPortalMobile() {
                                     </span>
                                   </div>
                                 </div>
-                                
+
                                 <div className="flex flex-col gap-1.5 text-xs mt-2">
                                   {jumlahTersendat > 0 && (
                                     <div className="flex items-center gap-2 text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200">
@@ -1622,7 +1605,7 @@ export default function MusyrifPortalMobile() {
                       </h3>
                       <button
                         type="button"
-                        onClick={() => setShowRaportModal(true)}
+                        onClick={() => handleOpenRaportModal()}
                         className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl uppercase transition shadow-sm flex items-center gap-1"
                       >
                         <span>📑</span>
@@ -1711,7 +1694,8 @@ export default function MusyrifPortalMobile() {
                           📑 Histori Raport Santri
                         </h3>
                         <button
-                          onClick={() => setShowRaportModal(true)}
+                          type="button"
+                          onClick={() => handleOpenRaportModal()}
                           className="text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl uppercase transition shadow-sm flex items-center gap-1"
                         >
                           <span>✏️</span>
@@ -1739,6 +1723,15 @@ export default function MusyrifPortalMobile() {
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <button
+                                      type="button"
+                                      onClick={() => handleOpenRaportModal(r)}
+                                      className="text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-xl shadow-xs transition flex items-center gap-1"
+                                    >
+                                      <span>✏️</span>
+                                      <span>Edit</span>
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => {
                                         setSelectedRaportForPrint(r);
                                         setShowPrintRaportModal(true);
@@ -1824,7 +1817,7 @@ export default function MusyrifPortalMobile() {
 
       </div>
 
-      {/* POPUP MODAL DETAIL SETORAN (LEBIH BESAR & DETAIL) */}
+      {/* POPUP MODAL DETAIL SETORAN */}
       {selectedSetoranDetail && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[120] flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-emerald-100 shadow-2xl flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
@@ -1857,21 +1850,6 @@ export default function MusyrifPortalMobile() {
                 <div>
                   <span className="text-[9px] font-bold text-slate-400 uppercase block">Ayat</span>
                   <span className="text-xs font-black text-slate-800">{selectedSetoranDetail.ayat || '-'}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-amber-50 p-3 rounded-2xl border border-amber-200">
-                  <span className="text-[9px] font-bold text-amber-700 uppercase block">Jumlah Tersendat</span>
-                  <span className="text-sm font-black text-amber-900">
-                    {Number(selectedSetoranDetail.jumlah_tersendat ?? selectedSetoranDetail.tersendat ?? 0)} Kali
-                  </span>
-                </div>
-                <div className="bg-rose-50 p-3 rounded-2xl border border-rose-200">
-                  <span className="text-[9px] font-bold text-rose-700 uppercase block">Jumlah Teguran</span>
-                  <span className="text-sm font-black text-rose-900">
-                    {Number(selectedSetoranDetail.jumlah_teguran ?? selectedSetoranDetail.teguran ?? 0)} Kali
-                  </span>
                 </div>
               </div>
 
@@ -2204,50 +2182,6 @@ export default function MusyrifPortalMobile() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Kualitas Hafalan</label>
-                    <input
-                      type="text"
-                      value={aiFormFields.kualitas_hafalan}
-                      onChange={(e) => setAiFormFields({ ...aiFormFields, kualitas_hafalan: e.target.value })}
-                      placeholder="Sangat Baik / Perlu Murajaah"
-                      className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-bold text-emerald-800"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Absensi / Kehadiran</label>
-                    <input
-                      type="text"
-                      value={aiFormFields.absensi}
-                      onChange={(e) => setAiFormFields({ ...aiFormFields, absensi: e.target.value })}
-                      placeholder="100% Hadir"
-                      className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Fokus Tajwid (Pisahkan dengan koma)</label>
-                  <input
-                    type="text"
-                    value={aiFormFields.kualitas_tajwid}
-                    onChange={(e) => setAiFormFields({ ...aiFormFields, kualitas_tajwid: e.target.value })}
-                    placeholder="Madd Asli, Ghunnah, Idgham"
-                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Performance & Konsistensi</label>
-                  <input
-                    type="text"
-                    value={aiFormFields.konsistensi_halaqoh}
-                    onChange={(e) => setAiFormFields({ ...aiFormFields, konsistensi_halaqoh: e.target.value })}
-                    placeholder="Konsisten dan istiqamah"
-                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-medium"
-                  />
-                </div>
 
                 <div>
                   <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Rekomendasi Untuk Orang Tua</label>
@@ -2272,13 +2206,13 @@ export default function MusyrifPortalMobile() {
                 </div>
 
                 <div>
-                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Capaian & Kelebihan</label>
-                  <input
-                    type="text"
-                    value={aiFormFields.kelebihan}
-                    onChange={(e) => setAiFormFields({ ...aiFormFields, kelebihan: e.target.value })}
-                    placeholder="Lancar murajaah, tajwid fasih..."
-                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl font-medium"
+                  <label className="text-[9px] font-extrabold uppercase text-slate-500 block mb-1">Pesan Motivasi Santri</label>
+                  <DynamicTextarea
+                    value={aiFormFields.pesan_anak}
+                    onChange={(e) => setAiFormFields({ ...aiFormFields, pesan_anak: e.target.value })}
+                    placeholder="Pesan bimbingan & motivasi personal langsung untuk santri..."
+                    rows={2}
+                    className="text-xs p-2 bg-white border border-slate-200 rounded-xl"
                   />
                 </div>
               </div>
@@ -2354,76 +2288,213 @@ export default function MusyrifPortalMobile() {
                   <span className="font-bold text-slate-800">{selectedRaportForPrint.semester}</span>
                 </div>
                 <div>
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Musyrif Pembina</span>
-                  <span className="font-bold text-slate-800">{fullProfile?.nama_musyrif || musyrifName}</span>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Kelompok / Halaqah</span>
+                  <span className="font-bold text-slate-800">{fullProfile?.nama_kelompok || '-'}</span>
                 </div>
               </div>
 
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1.5">
-                  1. Rekapitulasi Capaian Nilai
-                </span>
-                <table className="w-full text-xs border-collapse border border-slate-200 rounded-xl overflow-hidden">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold text-[10px] uppercase border-b border-slate-200">
-                      <th className="p-2 text-left border-r border-slate-200">Kategori Evaluasi</th>
-                      <th className="p-2 text-center">Nilai Angka</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    <tr>
-                      <td className="p-2 border-r border-slate-200 font-medium">Nilai Harian / Kehadiran</td>
-                      <td className="p-2 text-center font-bold text-slate-800">{selectedRaportForPrint.nilai_harian ?? '-'}</td>
-                    </tr>
-                    <tr>
-                      <td className="p-2 border-r border-slate-200 font-medium">Nilai Ujian Bulanan</td>
-                      <td className="p-2 text-center font-bold text-slate-800">{selectedRaportForPrint.nilai_bulanan ?? '-'}</td>
-                    </tr>
-                    <tr className="bg-emerald-50/50">
-                      <td className="p-2 border-r border-slate-200 font-bold text-emerald-900">Nilai Akhir Rapor</td>
-                      <td className="p-2 text-center font-black text-emerald-700 text-sm">{selectedRaportForPrint.nilai_akhir ?? '-'}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Nilai Harian</span>
+                  <span className="text-xs font-bold text-slate-800">{selectedRaportForPrint.nilai_harian ?? '-'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block">Nilai Bulanan</span>
+                  <span className="text-xs font-bold text-slate-800">{selectedRaportForPrint.nilai_bulanan ?? '-'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-bold text-emerald-700 uppercase block">Nilai Akhir</span>
+                  <span className="text-xs font-black text-emerald-700">{selectedRaportForPrint.nilai_akhir ?? '-'}</span>
+                </div>
               </div>
 
+              {selectedRaportForPrint.catatan_musyrif && (
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Catatan Musyrif</span>
+                  <p className="text-xs text-slate-700 italic">"{selectedRaportForPrint.catatan_musyrif}"</p>
+                </div>
+              )}
+
               {(selectedRaportForPrint.rekomendasi_ai || selectedRaportForPrint.analisis_raport) && (
-                <div>
-                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1.5">
-                    2. Analisis & Rekomendasi AI
-                  </span>
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <span className="text-[9px] font-bold text-emerald-800 uppercase block mb-2">Analisis & Rekomendasi AI</span>
                   <FormattedAiAnalysis content={selectedRaportForPrint.rekomendasi_ai || selectedRaportForPrint.analisis_raport} />
                 </div>
               )}
 
-              {selectedRaportForPrint.catatan_musyrif && (
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <span className="text-[9px] font-bold uppercase text-slate-500 block mb-1">
-                    3. Catatan Musyrif Halaqah
-                  </span>
-                  <p className="text-xs text-slate-700 leading-relaxed italic">
-                    "{selectedRaportForPrint.catatan_musyrif}"
-                  </p>
+              <div className="flex justify-between items-center pt-6 mt-4 border-t border-slate-200 text-xs">
+                <div className="text-center">
+                  <p className="text-slate-500 mb-10">Orang Tua / Wali Santri</p>
+                  <p className="font-bold text-slate-800">( .................................... )</p>
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4 pt-6 text-center text-xs text-slate-700">
-                <div>
-                  <p className="text-[10px] text-slate-400">Orang Tua / Wali Santri</p>
-                  <div className="h-14"></div>
-                  <p className="font-bold border-t border-slate-300 pt-1 mx-4">( ................................ )</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400">Musyrif Pembina</p>
-                  <div className="h-14"></div>
-                  <p className="font-bold border-t border-slate-300 pt-1 mx-4">({musyrifName})</p>
+                <div className="text-center">
+                  <p className="text-slate-500 mb-10">Musyrif Halaqah</p>
+                  <p className="font-bold text-slate-800">({musyrifName || 'Musyrif'})</p>
                 </div>
               </div>
+            </div>
+
+            <div className="print:hidden">
+              <button
+                type="button"
+                onClick={() => setShowPrintRaportModal(false)}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition"
+              >
+                Tutup Preview
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* POPUP MODAL PROFIL & GANTI PASSWORD MUSYRIF */}
+      {showMusyrifProfileModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border border-emerald-100 shadow-2xl flex flex-col gap-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">⚙️</span>
+                <h3 className="text-xs font-black uppercase text-slate-800 tracking-wider">
+                  Profil & Pengaturan Musyrif
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowMusyrifProfileModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
+              <button
+                onClick={() => setMusyrifProfileTab('info')}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl uppercase transition ${
+                  musyrifProfileTab === 'info' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                Informasi Akun
+              </button>
+              <button
+                onClick={() => setMusyrifProfileTab('password')}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl uppercase transition ${
+                  musyrifProfileTab === 'password' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                Ganti Password
+              </button>
+            </div>
+
+            {musyrifProfileTab === 'info' ? (
+              <form onSubmit={handleUpdateMusyrifProfile} className="flex flex-col gap-4">
+                <div className="flex flex-col items-center gap-2 my-2">
+                  <div className="relative">
+                    {musyrifProfileData?.foto_profile ? (
+                      <img
+                        src={
+                          musyrifProfileData.foto_profile.startsWith('http')
+                            ? musyrifProfileData.foto_profile
+                            : getApiUrl(musyrifProfileData.foto_profile)
+                        }
+                        alt="Foto Musyrif"
+                        className="w-20 h-20 rounded-full object-cover border-2 border-emerald-500 shadow-md"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-full bg-emerald-600 flex items-center justify-center text-2xl font-black text-white border-2 border-emerald-400 shadow-md">
+                        {(musyrifName || 'M').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <label className="absolute bottom-0 right-0 bg-emerald-600 hover:bg-emerald-500 text-white p-1.5 rounded-full shadow cursor-pointer transition">
+                      <span className="text-xs">📷</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleUploadFotoMusyrif}
+                        className="hidden"
+                        disabled={uploadingFoto}
+                      />
+                    </label>
+                  </div>
+                  {uploadingFoto && <span className="text-[10px] text-emerald-600 font-bold">Mengunggah Foto...</span>}
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nama Lengkap</label>
+                  <input
+                    type="text"
+                    value={musyrifNamaLengkap}
+                    onChange={(e) => setMusyrifNamaLengkap(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Username / ID</label>
+                  <input
+                    type="text"
+                    value={musyrifUsername}
+                    onChange={(e) => setMusyrifUsername(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={musyrifActionLoading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition shadow mt-1"
+                >
+                  {musyrifActionLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleChangePasswordMusyrif} className="flex flex-col gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Password Lama</label>
+                  <input
+                    type="password"
+                    value={passwordLama}
+                    onChange={(e) => setPasswordLama(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Password Baru</label>
+                  <input
+                    type="password"
+                    value={passwordBaru}
+                    onChange={(e) => setPasswordBaru(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Konfirmasi Password Baru</label>
+                  <input
+                    type="password"
+                    value={konfirmasiPasswordBaru}
+                    onChange={(e) => setKonfirmasiPasswordBaru(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={musyrifActionLoading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition shadow mt-1"
+                >
+                  {musyrifActionLoading ? 'Memproses...' : 'Ubah Password'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
-} 
+}
