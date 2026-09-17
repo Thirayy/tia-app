@@ -1,11 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-gnome-darker: #f6f8fb;
+  --color-gnome-darker: #f8fafc;
   --color-gnome-card: #ffffff;
-  --color-gnome-input: #eefbf5;
-  --color-gnome-border: #ccefe0;
-  --color-gnome-green: #00b86b;
+  --color-gnome-input: #ecfdf5;
+  --color-gnome-border: #a7f3d0;
+  --color-gnome-green: #10b981;
+
+  --color-primary-50: #ecfdf5;
+  --color-primary-100: #d1fae5;
+  --color-primary-200: #a7f3d0;
+  --color-primary-300: #6ee7b7;
+  --color-primary-400: #34d399;
+  --color-primary-500: #10b981;
+  --color-primary-600: #059669;
+  --color-primary-700: #047857;
+  --color-primary-800: #065f46;
+  --color-primary-900: #064e3b;
+  --color-primary-950: #022c22;
 }
 
 * {
@@ -17,7 +29,7 @@ html {
 }
 
 body {
-  background-color: var(--color-gnome-darker);
+  background-color: #f8fafc;
   color: #1e293b;
   min-height: 100vh;
   text-rendering: optimizeLegibility;
